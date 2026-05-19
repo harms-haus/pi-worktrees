@@ -1,7 +1,7 @@
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getWorktreeList } from "./helpers.js";
-import { getMainRepoPath } from "./state.js";
+import { getWorktreeList } from "./git.js";
+import { getMainRepoPath, getDefaultBranch } from "./state.js";
 
 /** Provide branch-name tab-completion for worktree commands. */
 export async function getBranchCompletions(
@@ -13,7 +13,7 @@ export async function getBranchCompletions(
 
   // Collect unique branch names, skipping "detached"
   const branchNames = new Set<string>();
-  branchNames.add("main");
+  branchNames.add(getDefaultBranch());
   for (const wt of worktrees) {
     if (wt.branchName !== "detached") {
       branchNames.add(wt.branchName);

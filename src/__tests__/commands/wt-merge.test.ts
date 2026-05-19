@@ -1,15 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// ── Mock helpers before importing anything that uses them ──────────
-vi.mock("../../helpers.js", () => ({
+// ── Mock git module ──────────────────────────────────────────────
+vi.mock("../../git.js", () => ({
   gitExec: vi.fn(),
   getWorktreeList: vi.fn(),
   findWorktreeByBranch: vi.fn(),
   getMainWorktree: vi.fn(),
+}));
+
+// ── Mock worktree module ──────────────────────────────────────────
+vi.mock("../../worktree.js", () => ({
   switchCwd: vi.fn(),
-  detectMainRepo: vi.fn(),
+  ensureMainRepo: vi.fn(() => Promise.resolve(true)),
   hasUncommittedChanges: vi.fn(),
   autoCommitWithAIMessage: vi.fn(),
+}));
+
+// ── Mock validation module ───────────────────────────────────────
+vi.mock("../../validation.js", () => ({
   validateBranchName: vi.fn(() => null),
 }));
 
@@ -23,52 +31,38 @@ vi.mock("../../state.js", () => ({
 }));
 
 // ── Imports (after mocks are registered) ─────────────────────────────
+import { gitExec, getWorktreeList, findWorktreeByBranch, getMainWorktree } from "../../git.js";
 import {
-  gitExec,
-  getWorktreeList,
-  findWorktreeByBranch,
-  getMainWorktree,
   switchCwd,
-  detectMainRepo,
+  ensureMainRepo,
   hasUncommittedChanges,
   autoCommitWithAIMessage,
-} from "../../helpers.js";
+} from "../../worktree.js";
+import { validateBranchName } from "../../validation.js";
 import {
   getMainRepoPath,
-  setMainRepoPath,
   getCurrentBranch,
   setCurrentBranch,
   updateFooterStatus,
+  getDefaultBranch,
 } from "../../state.js";
 import { handleWtMerge } from "../../commands/wt-merge.js";
 import { createMockAPI, createMockContext, successResult, errorResult } from "../helpers/mocks.js";
+import {
+  mainWorktree,
+  featureWorktree,
+  worktrees,
+  MAIN_REPO,
+  MAIN_BRANCH,
+  FEATURE_BRANCH,
+  FEATURE_PATH,
+} from "../helpers/fixtures.js";
 
 import type { WorktreeInfo } from "../../types.js";
 
 // ============================================================================
-// Test Data
+// Test Data (imported from fixtures)
 // ============================================================================
-
-const MAIN_REPO = "/repo";
-const MAIN_BRANCH = "main";
-const FEATURE_BRANCH = "feature";
-const FEATURE_PATH = "/repo/.git/worktrees/feature";
-
-const mainWorktree: WorktreeInfo = {
-  path: MAIN_REPO,
-  head: "abc123",
-  branch: "refs/heads/main",
-  branchName: MAIN_BRANCH,
-};
-
-const featureWorktree: WorktreeInfo = {
-  path: FEATURE_PATH,
-  head: "def456",
-  branch: "refs/heads/feature",
-  branchName: FEATURE_BRANCH,
-};
-
-const worktrees: WorktreeInfo[] = [mainWorktree, featureWorktree];
 
 // ============================================================================
 // Setup / Teardown
@@ -80,6 +74,10 @@ beforeEach(() => {
   vi.mocked(getMainRepoPath).mockReturnValue(MAIN_REPO);
   // Default: current branch is feature
   vi.mocked(getCurrentBranch).mockReturnValue(FEATURE_BRANCH);
+  // Default: no validation error
+  vi.mocked(validateBranchName).mockReturnValue(null);
+  // Default: ensureMainRepo succeeds
+  vi.mocked(ensureMainRepo).mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -101,7 +99,9 @@ describe("handleWtMerge", () => {
     await handleWtMerge("", ctx, pi);
 
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      "Usage: /wt-merge <branch-name> (currently on main, no worktree to merge)",
+      "Usage: /wt-merge <branch-name> (currently on " +
+        getDefaultBranch() +
+        ", no worktree to merge)",
       "error",
     );
     // No further operations
@@ -113,10 +113,6 @@ describe("handleWtMerge", () => {
   it("no args on worktree → uses current branch name", async () => {
     const pi = createMockAPI().api;
     const ctx = createMockContext();
-
-    // getMainRepoPath returns empty → triggers detectMainRepo
-    vi.mocked(getMainRepoPath).mockReturnValueOnce("");
-    vi.mocked(detectMainRepo).mockResolvedValueOnce(MAIN_REPO);
 
     vi.mocked(getWorktreeList).mockResolvedValueOnce(worktrees);
     vi.mocked(findWorktreeByBranch).mockReturnValueOnce(featureWorktree);
@@ -477,13 +473,10 @@ describe("handleWtMerge", () => {
     expect(gitExec).toHaveBeenCalledWith(pi, ["stash", "pop"], MAIN_REPO);
   });
 
-  // ── Main repo path unknown → detects from cwd ──────────────────
-  it("main repo path unknown → detects from cwd", async () => {
+  // ── Main repo path ensured via ensureMainRepo ──────────────────
+  it("calls ensureMainRepo to resolve main repo path", async () => {
     const pi = createMockAPI().api;
     const ctx = createMockContext();
-
-    vi.mocked(getMainRepoPath).mockReturnValueOnce("").mockReturnValue(MAIN_REPO);
-    vi.mocked(detectMainRepo).mockResolvedValueOnce(MAIN_REPO);
 
     vi.mocked(getWorktreeList).mockResolvedValueOnce(worktrees);
     vi.mocked(findWorktreeByBranch).mockReturnValueOnce(featureWorktree);
@@ -498,20 +491,52 @@ describe("handleWtMerge", () => {
 
     await handleWtMerge("feature", ctx, pi);
 
-    expect(detectMainRepo).toHaveBeenCalledWith(pi, ctx.cwd);
-    expect(setMainRepoPath).toHaveBeenCalledWith(MAIN_REPO);
+    expect(ensureMainRepo).toHaveBeenCalledWith(pi, ctx);
   });
 
-  // ── Main repo path unknown and detection fails → error ─────────
-  it("main repo detection fails → error notification", async () => {
+  // ── ensureMainRepo fails → error notification ──────────────────
+  it("ensureMainRepo fails → error notification", async () => {
     const pi = createMockAPI().api;
     const ctx = createMockContext();
 
-    vi.mocked(getMainRepoPath).mockReturnValueOnce("");
-    vi.mocked(detectMainRepo).mockResolvedValueOnce(null);
+    vi.mocked(ensureMainRepo).mockImplementationOnce((_pi: any, mockCtx: any) => {
+      mockCtx.ui.notify("Not inside a git repository", "error");
+      return Promise.resolve(false);
+    });
 
     await handleWtMerge("feature", ctx, pi);
 
     expect(ctx.ui.notify).toHaveBeenCalledWith("Not inside a git repository", "error");
+    expect(getWorktreeList).not.toHaveBeenCalled();
+    expect(gitExec).not.toHaveBeenCalled();
+  });
+
+  // ── Target is default branch → error notification ──────────────────
+  it("target is default branch → error notification", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    await handleWtMerge("main", ctx, pi);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Cannot merge the " + getDefaultBranch() + " branch into itself",
+      "error",
+    );
+    expect(getWorktreeList).not.toHaveBeenCalled();
+    expect(gitExec).not.toHaveBeenCalled();
+  });
+
+  // ── Invalid branch name → error notification ────────────────────
+  it("invalid branch name → error notification", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    vi.mocked(validateBranchName).mockReturnValueOnce("Branch name cannot be 'HEAD'");
+
+    await handleWtMerge("HEAD", ctx, pi);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Branch name cannot be 'HEAD'", "error");
+    expect(getWorktreeList).not.toHaveBeenCalled();
+    expect(gitExec).not.toHaveBeenCalled();
   });
 });

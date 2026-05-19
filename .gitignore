@@ -5,3 +5,4 @@ coverage/
 .bifrost.yaml
 PLAN.md
 RESEARCH*.md
+bifrost.db

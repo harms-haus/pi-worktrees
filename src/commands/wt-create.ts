@@ -1,19 +1,10 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import {
-  gitExec,
-  resolveBaseDir,
-  switchCwd,
-  detectMainRepo,
-  validateBranchName,
-} from "../helpers.js";
-import {
-  getMainRepoPath,
-  setMainRepoPath,
-  setCurrentBranch,
-  updateFooterStatus,
-} from "../state.js";
+import { gitExec } from "../git.js";
+import { resolveBaseDir, switchCwd, ensureMainRepo } from "../worktree.js";
+import { validateBranchName } from "../validation.js";
+import { getMainRepoPath, setCurrentBranch, updateFooterStatus } from "../state.js";
 
 export async function handleWtCreate(
   args: string,
@@ -34,14 +25,7 @@ export async function handleWtCreate(
   }
 
   // 2. Ensure main repo path is known
-  if (getMainRepoPath() === "") {
-    const mainRepo = await detectMainRepo(pi, ctx.cwd);
-    if (!mainRepo) {
-      ctx.ui.notify("Not inside a git repository", "error");
-      return;
-    }
-    setMainRepoPath(mainRepo);
-  }
+  if (!(await ensureMainRepo(pi, ctx))) return;
 
   // 3. Resolve worktree path
   const baseDir = resolveBaseDir(getMainRepoPath());

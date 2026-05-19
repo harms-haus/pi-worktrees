@@ -7,10 +7,9 @@ vi.mock("../commands/wt-merge.js", () => ({ handleWtMerge: vi.fn() }));
 vi.mock("../commands/wt-cleanup.js", () => ({ handleWtCleanup: vi.fn() }));
 
 // ── Mock helpers module ─────────────────────────────────────────────
-vi.mock("../helpers.js", () => ({
+vi.mock("../worktree.js", () => ({
   detectMainRepo: vi.fn(),
   detectDefaultBranch: vi.fn(),
-  getBranchCompletions: vi.fn(),
 }));
 
 // ── Mock state module ───────────────────────────────────────────────
@@ -33,7 +32,7 @@ import { handleWtCreate } from "../commands/wt-create.js";
 import { handleWtSwitch } from "../commands/wt-switch.js";
 import { handleWtMerge } from "../commands/wt-merge.js";
 import { handleWtCleanup } from "../commands/wt-cleanup.js";
-import { detectMainRepo, detectDefaultBranch } from "../helpers.js";
+import { detectMainRepo, detectDefaultBranch } from "../worktree.js";
 import {
   setMainRepoPath,
   setDefaultBranch,
@@ -189,7 +188,7 @@ describe("pi-worktrees extension entry point", () => {
     // Assert state management functions were called
     expect(setMainRepoPath).toHaveBeenCalledWith("/path/to/repo");
     expect(setDefaultBranch).toHaveBeenCalledWith("main");
-    expect(restoreWorktreeFromBranch).toHaveBeenCalledWith(ctx, ctx.cwd);
+    expect(restoreWorktreeFromBranch).toHaveBeenCalledWith(ctx);
     expect(updateFooterStatus).toHaveBeenCalledWith(ctx);
   });
 
@@ -206,7 +205,7 @@ describe("pi-worktrees extension entry point", () => {
     expect(setMainRepoPath).not.toHaveBeenCalled();
     expect(setDefaultBranch).not.toHaveBeenCalled();
     // restoreWorktreeFromBranch and updateFooterStatus should still be called
-    expect(restoreWorktreeFromBranch).toHaveBeenCalledWith(ctx, ctx.cwd);
+    expect(restoreWorktreeFromBranch).toHaveBeenCalledWith(ctx);
     expect(updateFooterStatus).toHaveBeenCalledWith(ctx);
   });
 
@@ -218,7 +217,7 @@ describe("pi-worktrees extension entry point", () => {
     const sessionTreeHandler = handlers["session_tree"];
     sessionTreeHandler({}, ctx);
 
-    expect(restoreWorktreeFromBranch).toHaveBeenCalledWith(ctx, ctx.cwd);
+    expect(restoreWorktreeFromBranch).toHaveBeenCalledWith(ctx);
     expect(updateFooterStatus).toHaveBeenCalledWith(ctx);
   });
 
@@ -230,5 +229,23 @@ describe("pi-worktrees extension entry point", () => {
     sessionShutdownHandler();
 
     expect(resetState).toHaveBeenCalled();
+  });
+
+  // ── getArgumentCompletions calls getBranchCompletions ──────────────
+  it("getArgumentCompletions delegates to getBranchCompletions", async () => {
+    const { commands } = setup();
+
+    for (const name of ["wt-create", "wt-switch", "wt-merge", "wt-cleanup"]) {
+      const cmd = commands[name];
+      const completionsFn = cmd.options.getArgumentCompletions as (
+        prefix: string,
+      ) => Promise<unknown>;
+      await completionsFn("feat");
+    }
+
+    // getBranchCompletions should have been called once per command (4 times)
+    // Note: we mocked getBranchCompletions to resolve to []
+    const { getBranchCompletions } = await import("../completions.js");
+    expect(getBranchCompletions).toHaveBeenCalledTimes(4);
   });
 });

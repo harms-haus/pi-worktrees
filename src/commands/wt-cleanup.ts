@@ -1,14 +1,18 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExecResult,
+} from "@earendil-works/pi-coding-agent";
+import { gitExec, getWorktreeList, findWorktreeByBranch } from "../git.js";
+import { switchCwd, ensureMainRepo, hasUncommittedChanges } from "../worktree.js";
+import { validateBranchName } from "../validation.js";
 import {
-  gitExec,
-  getWorktreeList,
-  findWorktreeByBranch,
-  switchCwd,
-  detectMainRepo,
-  hasUncommittedChanges,
-  validateBranchName,
-} from "../helpers.js";
-import type { ExecResult } from "@earendil-works/pi-coding-agent";
+  getMainRepoPath,
+  getCurrentBranch,
+  setCurrentBranch,
+  updateFooterStatus,
+  getDefaultBranch,
+} from "../state.js";
 
 function notifyBranchDeletion(
   ctx: ExtensionCommandContext,
@@ -28,14 +32,6 @@ function notifyBranchDeletion(
     );
   }
 }
-import {
-  getMainRepoPath,
-  setMainRepoPath,
-  getCurrentBranch,
-  setCurrentBranch,
-  updateFooterStatus,
-  getDefaultBranch,
-} from "../state.js";
 
 export async function handleWtCleanup(
   args: string,
@@ -64,14 +60,7 @@ export async function handleWtCleanup(
   }
 
   // 2. Ensure main repo path is known
-  if (getMainRepoPath() === "") {
-    const mainRepo = await detectMainRepo(pi, ctx.cwd);
-    if (!mainRepo) {
-      ctx.ui.notify("Not inside a git repository", "error");
-      return;
-    }
-    setMainRepoPath(mainRepo);
-  }
+  if (!(await ensureMainRepo(pi, ctx))) return;
 
   // 3. Find the worktree
   if (target === defaultBranch) {

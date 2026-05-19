@@ -1,13 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// ── Mock helpers before importing anything that uses them ──────────
-vi.mock("../../helpers.js", () => ({
+// ── Mock git module ──────────────────────────────────────────────
+vi.mock("../../git.js", () => ({
   gitExec: vi.fn(),
   getWorktreeList: vi.fn(),
   findWorktreeByBranch: vi.fn(),
+}));
+
+// ── Mock worktree module ──────────────────────────────────────────
+vi.mock("../../worktree.js", () => ({
   switchCwd: vi.fn(),
   detectMainRepo: vi.fn(),
+  ensureMainRepo: vi.fn(() => Promise.resolve(true)),
   hasUncommittedChanges: vi.fn(),
+}));
+
+// ── Mock validation module ───────────────────────────────────────
+vi.mock("../../validation.js", () => ({
   validateBranchName: vi.fn(() => null),
 }));
 
@@ -21,13 +30,9 @@ vi.mock("../../state.js", () => ({
 }));
 
 // ── Imports (after mocks are registered) ─────────────────────────────
-import {
-  gitExec,
-  getWorktreeList,
-  findWorktreeByBranch,
-  switchCwd,
-  hasUncommittedChanges,
-} from "../../helpers.js";
+import { gitExec, getWorktreeList, findWorktreeByBranch } from "../../git.js";
+import { switchCwd, hasUncommittedChanges, ensureMainRepo } from "../../worktree.js";
+import { validateBranchName } from "../../validation.js";
 import {
   getMainRepoPath,
   getCurrentBranch,
@@ -37,33 +42,20 @@ import {
 } from "../../state.js";
 import { handleWtCleanup } from "../../commands/wt-cleanup.js";
 import { createMockAPI, createMockContext, successResult, errorResult } from "../helpers/mocks.js";
+import {
+  mainWorktree,
+  featureWorktree,
+  worktrees,
+  MAIN_REPO,
+  FEATURE_BRANCH,
+  FEATURE_PATH,
+} from "../helpers/fixtures.js";
 
 import type { WorktreeInfo } from "../../types.js";
 
 // ============================================================================
-// Test Data
+// Test Data (imported from fixtures)
 // ============================================================================
-
-const MAIN_REPO = "/repo";
-const MAIN_BRANCH = "main";
-const FEATURE_BRANCH = "feature";
-const FEATURE_PATH = "/repo/.git/worktrees/feature";
-
-const mainWorktree: WorktreeInfo = {
-  path: MAIN_REPO,
-  head: "abc123",
-  branch: "refs/heads/main",
-  branchName: MAIN_BRANCH,
-};
-
-const featureWorktree: WorktreeInfo = {
-  path: FEATURE_PATH,
-  head: "def456",
-  branch: "refs/heads/feature",
-  branchName: FEATURE_BRANCH,
-};
-
-const worktrees: WorktreeInfo[] = [mainWorktree, featureWorktree];
 
 // ============================================================================
 // Setup / Teardown
@@ -393,5 +385,41 @@ describe("handleWtCleanup", () => {
     );
     expect(setCurrentBranch).toHaveBeenCalledWith(getDefaultBranch());
     expect(switchCwd).toHaveBeenCalledWith(pi, ctx, MAIN_REPO);
+  });
+
+  // ── 10. Not in git repo → error notification ────────────────────
+  it("not in git repo → error notification", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    vi.mocked(ensureMainRepo).mockImplementationOnce((_pi: any, mockCtx: any) => {
+      mockCtx.ui.notify("Not inside a git repository", "error");
+      return Promise.resolve(false);
+    });
+
+    await handleWtCleanup("feature", ctx, pi);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Not inside a git repository", "error");
+    expect(getWorktreeList).not.toHaveBeenCalled();
+    expect(gitExec).not.toHaveBeenCalled();
+  });
+
+  // ── 11. Invalid branch name → error notification ────────────────
+  it("invalid branch name → error notification", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    vi.mocked(validateBranchName).mockReturnValueOnce(
+      "Branch name contains invalid character: '..'",
+    );
+
+    await handleWtCleanup("bad..name", ctx, pi);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Branch name contains invalid character: '..'",
+      "error",
+    );
+    expect(getWorktreeList).not.toHaveBeenCalled();
+    expect(gitExec).not.toHaveBeenCalled();
   });
 });

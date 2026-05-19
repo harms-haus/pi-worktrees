@@ -3,11 +3,11 @@ import {
   parseWorktreePorcelain,
   findWorktreeByBranch,
   getMainWorktree,
-  validateBranchName,
-  expandTilde,
   gitExec,
   getWorktreeList,
-} from "../helpers.js";
+} from "../git.js";
+import { expandTilde } from "../validation.js";
+import { validateBranchName } from "../validation.js";
 import { createMockAPI } from "./helpers/mocks.js";
 import type { WorktreeInfo } from "../types.js";
 

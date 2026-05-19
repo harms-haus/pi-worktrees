@@ -4,11 +4,15 @@
   "description": "pi-coding-agent extension: manage git worktrees with /wt-create, /wt-switch, /wt-merge, /wt-cleanup",
   "type": "module",
   "author": "harms-haus",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package",
+    "worktrees"
+  ],
   "main": "src/index.ts",
   "files": [
     "src/**/*.ts",
     "!src/__tests__/**",
+    "docs/",
     "README.md",
     "LICENSE"
   ],
@@ -38,13 +42,13 @@
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "@eslint/js": "^9.0.0",
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.0.0",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.6"
   },
   "license": "MIT",
   "repository": {

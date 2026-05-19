@@ -1,106 +1,21 @@
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExecResult,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-import { getCurrentBranch, getMainRepoPath, setCurrentWorktreePath } from "./state.js";
-import type { WorktreeInfo } from "./types.js";
+import { gitExec, getWorktreeList, getMainWorktree } from "./git.js";
+import {
+  getMainRepoPath,
+  getCurrentBranch,
+  setCurrentWorktreePath,
+  getDefaultBranch,
+  setMainRepoPath,
+} from "./state.js";
 import { WORKTREE_CHANGE_TYPE } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// 1. gitExec — thin wrapper around pi.exec for git commands
-// ---------------------------------------------------------------------------
-
-export async function gitExec(pi: ExtensionAPI, args: string[], cwd?: string): Promise<ExecResult> {
-  return pi.exec("git", args, { cwd: cwd ?? getMainRepoPath() });
-}
-
-// ---------------------------------------------------------------------------
-// 2. parseWorktreePorcelain — pure parser for `git worktree list --porcelain`
-// ---------------------------------------------------------------------------
-
-export function parseWorktreePorcelain(output: string): WorktreeInfo[] {
-  const trimmed = output.trim();
-  if (!trimmed) return [];
-
-  const blocks = trimmed.split(/\n\n+/);
-  const result: WorktreeInfo[] = [];
-
-  for (const block of blocks) {
-    const blockTrimmed = block.trim();
-    if (!blockTrimmed) continue;
-
-    let worktreePath = "";
-    let head = "";
-    let branch = "";
-    let isDetached = false;
-
-    for (const line of blockTrimmed.split("\n")) {
-      if (line.startsWith("worktree ")) {
-        worktreePath = line.slice("worktree ".length);
-      } else if (line.startsWith("HEAD ")) {
-        head = line.slice("HEAD ".length);
-      } else if (line.startsWith("branch ")) {
-        branch = line.slice("branch ".length);
-      } else if (line === "detached") {
-        isDetached = true;
-      }
-    }
-
-    if (!worktreePath) continue;
-
-    let branchName: string;
-    if (isDetached || !branch) {
-      branchName = "detached";
-      branch = branch || "detached";
-    } else if (branch.startsWith("refs/heads/")) {
-      branchName = branch.slice("refs/heads/".length);
-    } else {
-      branchName = branch;
-    }
-
-    result.push({ path: worktreePath, head, branch, branchName });
-  }
-
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// 3. getWorktreeList — fetch and parse worktree list
-// ---------------------------------------------------------------------------
-
-export async function getWorktreeList(pi: ExtensionAPI, cwd?: string): Promise<WorktreeInfo[]> {
-  const result = await gitExec(pi, ["worktree", "list", "--porcelain"], cwd);
-  if (result.code !== 0) return [];
-  return parseWorktreePorcelain(result.stdout);
-}
-
-// ---------------------------------------------------------------------------
-// 4. findWorktreeByBranch — find a worktree by its branch name
-// ---------------------------------------------------------------------------
-
-export function findWorktreeByBranch(
-  worktrees: WorktreeInfo[],
-  branchName: string,
-): WorktreeInfo | undefined {
-  return worktrees.find((wt) => wt.branchName === branchName);
-}
-
-// ---------------------------------------------------------------------------
-// 5. getMainWorktree — first worktree (git always lists main first)
-// ---------------------------------------------------------------------------
-
-export function getMainWorktree(worktrees: WorktreeInfo[]): WorktreeInfo | undefined {
-  return worktrees[0];
-}
-
-// ---------------------------------------------------------------------------
-// 6. resolveBaseDir — determine where worktrees are stored
+// resolveBaseDir — determine where worktrees are stored
 // ---------------------------------------------------------------------------
 
 const DEFAULT_BASE_DIR = "./.git/worktrees/";
@@ -137,7 +52,7 @@ export function resolveBaseDir(mainRepoPath: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 7. switchCwd — switch CWD, update state, persist entry
+// switchCwd — switch CWD, update state, persist entry
 // ---------------------------------------------------------------------------
 
 export function switchCwd(
@@ -151,11 +66,12 @@ export function switchCwd(
     mainRepoPath: getMainRepoPath(),
     currentWorktreePath: targetPath,
     currentBranch: getCurrentBranch(),
+    defaultBranch: getDefaultBranch(),
   });
 }
 
 // ---------------------------------------------------------------------------
-// 8. detectMainRepo — find the main repo root from a worktree CWD
+// detectMainRepo — find the main repo root from a worktree CWD
 // ---------------------------------------------------------------------------
 
 export async function detectMainRepo(pi: ExtensionAPI, cwd: string): Promise<string | null> {
@@ -165,7 +81,7 @@ export async function detectMainRepo(pi: ExtensionAPI, cwd: string): Promise<str
 }
 
 // ---------------------------------------------------------------------------
-// 9. hasUncommittedChanges — check for dirty working tree
+// hasUncommittedChanges — check for dirty working tree
 // ---------------------------------------------------------------------------
 
 export async function hasUncommittedChanges(
@@ -177,7 +93,7 @@ export async function hasUncommittedChanges(
 }
 
 // ---------------------------------------------------------------------------
-// 9b. detectDefaultBranch — detect the default branch from git
+// detectDefaultBranch — detect the default branch from git
 // ---------------------------------------------------------------------------
 
 export async function detectDefaultBranch(pi: ExtensionAPI, cwd: string): Promise<string> {
@@ -198,7 +114,31 @@ export async function detectDefaultBranch(pi: ExtensionAPI, cwd: string): Promis
 }
 
 // ---------------------------------------------------------------------------
-// 10. autoCommitWithAIMessage — stage, generate commit message, commit
+// ensureMainRepo — ensure mainRepoPath is known; detect from cwd if not set
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensure mainRepoPath is known. Detects from cwd if not set.
+ * Returns true if main repo was detected, false if not in a git repo.
+ * Sets mainRepoPath on success.
+ */
+export async function ensureMainRepo(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+): Promise<boolean> {
+  if (getMainRepoPath() !== "") return true;
+
+  const mainRepo = await detectMainRepo(pi, ctx.cwd);
+  if (!mainRepo) {
+    ctx.ui.notify("Not inside a git repository", "error");
+    return false;
+  }
+  setMainRepoPath(mainRepo);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// autoCommitWithAIMessage — stage, generate commit message, commit
 // ---------------------------------------------------------------------------
 
 const FALLBACK_COMMIT_MESSAGE = "chore: auto-commit worktree changes";
@@ -249,42 +189,4 @@ export async function autoCommitWithAIMessage(
   }
 
   return commitMessage;
-}
-
-// ---------------------------------------------------------------------------
-// 11. validateBranchName — validate a proposed git branch name
-// ---------------------------------------------------------------------------
-
-/* eslint-disable-next-line no-control-regex */
-const BRANCH_NAME_RE = /(\.\.|~|\^|:|\\|[\x00-\x1f\x7f]|\s)|\.lock$/;
-
-export function validateBranchName(name: string): string | null {
-  if (!name || name.length === 0) {
-    return "Branch name cannot be empty";
-  }
-  if (name.startsWith("-")) {
-    return "Branch name cannot start with '-'";
-  }
-  if (name.toUpperCase() === "HEAD") {
-    return "Branch name cannot be 'HEAD'";
-  }
-  const match = BRANCH_NAME_RE.exec(name);
-  if (match) {
-    return `Branch name contains invalid character: '${match[1] || name.slice(-5)}'`;
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// 12. expandTilde — expand leading ~ to $HOME
-// ---------------------------------------------------------------------------
-
-export function expandTilde(input: string): string {
-  if (input.startsWith("~")) {
-    const home = process.env.HOME || "";
-    if (home) {
-      return home + input.slice(1);
-    }
-  }
-  return input;
 }

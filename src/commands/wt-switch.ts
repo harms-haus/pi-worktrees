@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-import { getWorktreeList, findWorktreeByBranch, switchCwd, detectMainRepo } from "../helpers.js";
+import { getWorktreeList, findWorktreeByBranch } from "../git.js";
+import { switchCwd, ensureMainRepo } from "../worktree.js";
 import {
   getMainRepoPath,
-  setMainRepoPath,
   setCurrentBranch,
   updateFooterStatus,
   getDefaultBranch,
@@ -22,18 +22,11 @@ export async function handleWtSwitch(
   }
 
   // 2. Ensure main repo path is known
-  if (getMainRepoPath() === "") {
-    const mainRepo = await detectMainRepo(pi, ctx.cwd);
-    if (!mainRepo) {
-      ctx.ui.notify("Not inside a git repository", "error");
-      return;
-    }
-    setMainRepoPath(mainRepo);
-  }
+  if (!(await ensureMainRepo(pi, ctx))) return;
 
   // 3. Handle default branch target (accept both "main" literal and detected default)
   const defaultBranch = getDefaultBranch();
-  if (target === defaultBranch || target === "main") {
+  if (target === defaultBranch) {
     setCurrentBranch(defaultBranch);
     switchCwd(pi, ctx, getMainRepoPath());
     updateFooterStatus(ctx);

@@ -10,12 +10,13 @@ const { getWorktreeList } = vi.hoisted(() => ({
   getWorktreeList: vi.fn(),
 }));
 
-vi.mock("../helpers.js", () => ({
+vi.mock("../git.js", () => ({
   getWorktreeList,
 }));
 
 vi.mock("../state.js", () => ({
   getMainRepoPath: vi.fn(() => "/repo"),
+  getDefaultBranch: vi.fn(() => "main"),
 }));
 
 // ---------------------------------------------------------------------------
@@ -83,5 +84,32 @@ describe("getBranchCompletions", () => {
     expect(result).not.toBeNull();
     const mainCount = result!.filter((item) => item.label === "main").length;
     expect(mainCount).toBe(1);
+  });
+
+  it("returns null when getWorktreeList returns empty array", async () => {
+    getWorktreeList.mockResolvedValue([]);
+
+    const { api } = createMockAPI();
+    const result = await getBranchCompletions("", api);
+
+    expect(result).toBeNull();
+  });
+
+  it("skips detached branches and includes default branch", async () => {
+    const worktreesWithDetached: WorktreeInfo[] = [
+      { path: "/repo", head: "aaa", branch: "refs/heads/main", branchName: "main" },
+      { path: "/repo/wt1", head: "bbb", branch: "detached", branchName: "detached" },
+      { path: "/repo/wt2", head: "ccc", branch: "refs/heads/feature", branchName: "feature" },
+    ];
+    getWorktreeList.mockResolvedValue(worktreesWithDetached);
+
+    const { api } = createMockAPI();
+    const result = await getBranchCompletions("", api);
+
+    expect(result).not.toBeNull();
+    const labels = result!.map((item) => item.label);
+    expect(labels).not.toContain("detached");
+    expect(labels).toContain("main");
+    expect(labels).toContain("feature");
   });
 });

@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ── Mock helpers module ─────────────────────────────────────────────
-vi.mock("../../helpers.js", () => ({
+// ── Mock git module ─────────────────────────────────────────────
+vi.mock("../../git.js", () => ({
   getWorktreeList: vi.fn(),
   findWorktreeByBranch: vi.fn(),
+}));
+
+// ── Mock worktree module ─────────────────────────────────────────
+vi.mock("../../worktree.js", () => ({
   switchCwd: vi.fn(),
-  detectMainRepo: vi.fn(),
+  ensureMainRepo: vi.fn(),
 }));
 
 // ── Mock state module ───────────────────────────────────────────────
@@ -19,7 +23,8 @@ vi.mock("../../state.js", () => ({
 
 // ── Imports (after mocks are registered) ─────────────────────────────
 import { handleWtSwitch } from "../../commands/wt-switch.js";
-import { getWorktreeList, findWorktreeByBranch, switchCwd } from "../../helpers.js";
+import { getWorktreeList, findWorktreeByBranch } from "../../git.js";
+import { switchCwd, ensureMainRepo } from "../../worktree.js";
 import {
   getMainRepoPath,
   setCurrentBranch,
@@ -36,6 +41,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Default: main repo path is already known
   vi.mocked(getMainRepoPath).mockReturnValue("/repo");
+  vi.mocked(ensureMainRepo).mockResolvedValue(true);
 });
 
 // ============================================================================
@@ -121,5 +127,35 @@ describe("handleWtSwitch", () => {
     );
     expect(switchCwd).not.toHaveBeenCalled();
     expect(setCurrentBranch).not.toHaveBeenCalled();
+  });
+
+  it("switch to literal 'main' when default is 'master' → treats as regular branch lookup", async () => {
+    vi.mocked(getDefaultBranch).mockReturnValue("master");
+    vi.mocked(getWorktreeList).mockResolvedValue([]);
+    vi.mocked(findWorktreeByBranch).mockReturnValue(undefined);
+
+    const ctx = createMockContext();
+    await handleWtSwitch("main", ctx, api);
+
+    // Should NOT switch to main repo — instead looks up branch 'main' as a regular branch
+    expect(switchCwd).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "No worktree found for branch 'main'. Use /wt-create main first.",
+      "error",
+    );
+  });
+
+  it("not in git repo → error notification", async () => {
+    vi.mocked(ensureMainRepo).mockImplementationOnce((_pi: any, mockCtx: any) => {
+      mockCtx.ui.notify("Not inside a git repository", "error");
+      return Promise.resolve(false);
+    });
+
+    const ctx = createMockContext();
+    await handleWtSwitch("feature", ctx, api);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Not inside a git repository", "error");
+    expect(switchCwd).not.toHaveBeenCalled();
+    expect(getWorktreeList).not.toHaveBeenCalled();
   });
 });

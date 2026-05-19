@@ -66,7 +66,7 @@ export function updateFooterStatus(ctx: ExtensionContext): void {
   }
 }
 
-export function restoreWorktreeFromBranch(ctx: ExtensionContext, _originalCwd: string): void {
+export function restoreWorktreeFromBranch(ctx: ExtensionContext): void {
   let entries: SessionEntry[];
   try {
     entries = ctx.sessionManager.getBranch();

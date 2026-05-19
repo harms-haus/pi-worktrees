@@ -6,12 +6,20 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
 }));
 
-// ── Mock helpers module ─────────────────────────────────────────────
-vi.mock("../../helpers.js", () => ({
+// ── Mock git module ─────────────────────────────────────────────
+vi.mock("../../git.js", () => ({
   gitExec: vi.fn(),
+}));
+
+// ── Mock worktree module ─────────────────────────────────────────
+vi.mock("../../worktree.js", () => ({
   resolveBaseDir: vi.fn(() => "/repo/.git/worktrees/"),
-  detectMainRepo: vi.fn(),
+  ensureMainRepo: vi.fn(),
   switchCwd: vi.fn(),
+}));
+
+// ── Mock validation module ──────────────────────────────────────
+vi.mock("../../validation.js", () => ({
   validateBranchName: vi.fn(() => null),
 }));
 
@@ -26,30 +34,11 @@ vi.mock("../../state.js", () => ({
 // ── Imports (after mocks are registered) ─────────────────────────────
 import { statSync } from "node:fs";
 import { handleWtCreate } from "../../commands/wt-create.js";
-import {
-  gitExec,
-  resolveBaseDir,
-  detectMainRepo,
-  switchCwd,
-  validateBranchName,
-} from "../../helpers.js";
+import { gitExec } from "../../git.js";
+import { resolveBaseDir, ensureMainRepo, switchCwd } from "../../worktree.js";
+import { validateBranchName } from "../../validation.js";
 import { getMainRepoPath, setCurrentBranch, updateFooterStatus } from "../../state.js";
-import { createMockAPI, createMockContext } from "../helpers/mocks.js";
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function makeExecResult(
-  overrides: Partial<{ stdout: string; stderr: string; code: number; killed: boolean }> = {},
-) {
-  return {
-    stdout: overrides.stdout ?? "",
-    stderr: overrides.stderr ?? "",
-    code: overrides.code ?? 0,
-    killed: overrides.killed ?? false,
-  };
-}
+import { createMockAPI, createMockContext, successResult, errorResult } from "../helpers/mocks.js";
 
 // ============================================================================
 // Setup
@@ -66,6 +55,7 @@ beforeEach(() => {
   // Default: main repo path is already known
   vi.mocked(getMainRepoPath).mockReturnValue("/repo");
   vi.mocked(resolveBaseDir).mockReturnValue("/repo/.git/worktrees/");
+  vi.mocked(ensureMainRepo).mockResolvedValue(true);
 });
 
 // ============================================================================
@@ -94,8 +84,10 @@ describe("handleWtCreate", () => {
   });
 
   it("not in git repo → error notification", async () => {
-    vi.mocked(getMainRepoPath).mockReturnValue("");
-    vi.mocked(detectMainRepo).mockResolvedValue(null);
+    vi.mocked(ensureMainRepo).mockImplementationOnce((_pi: any, mockCtx: any) => {
+      mockCtx.ui.notify("Not inside a git repository", "error");
+      return Promise.resolve(false);
+    });
 
     const ctx = createMockContext();
     await handleWtCreate("feature", ctx, api);
@@ -121,9 +113,9 @@ describe("handleWtCreate", () => {
   it("new branch — success path", async () => {
     // rev-parse --verify → code 1 (branch doesn't exist)
     vi.mocked(gitExec)
-      .mockResolvedValueOnce(makeExecResult({ code: 1 }))
+      .mockResolvedValueOnce(errorResult())
       // worktree add -b → code 0
-      .mockResolvedValueOnce(makeExecResult({ code: 0 }));
+      .mockResolvedValueOnce(successResult());
 
     const ctx = createMockContext();
     await handleWtCreate("feature", ctx, api);
@@ -157,9 +149,9 @@ describe("handleWtCreate", () => {
   it("existing branch — success path", async () => {
     // rev-parse --verify → code 0 (branch exists)
     vi.mocked(gitExec)
-      .mockResolvedValueOnce(makeExecResult({ code: 0 }))
+      .mockResolvedValueOnce(successResult())
       // worktree add (no -b) → code 0
-      .mockResolvedValueOnce(makeExecResult({ code: 0 }));
+      .mockResolvedValueOnce(successResult());
 
     const ctx = createMockContext();
     await handleWtCreate("existing-branch", ctx, api);
@@ -194,9 +186,9 @@ describe("handleWtCreate", () => {
   it("git worktree add fails → error notification", async () => {
     // rev-parse --verify → code 1 (branch doesn't exist)
     vi.mocked(gitExec)
-      .mockResolvedValueOnce(makeExecResult({ code: 1 }))
+      .mockResolvedValueOnce(errorResult())
       // worktree add -b → code 1 (failure)
-      .mockResolvedValueOnce(makeExecResult({ code: 1, stderr: "fatal: already exists" }));
+      .mockResolvedValueOnce(errorResult("fatal: already exists"));
 
     const ctx = createMockContext();
     await handleWtCreate("feature", ctx, api);

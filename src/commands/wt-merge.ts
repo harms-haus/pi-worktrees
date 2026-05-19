@@ -1,18 +1,14 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { gitExec, getWorktreeList, findWorktreeByBranch, getMainWorktree } from "../git.js";
 import {
-  gitExec,
-  getWorktreeList,
-  findWorktreeByBranch,
-  getMainWorktree,
   switchCwd,
-  detectMainRepo,
+  ensureMainRepo,
   hasUncommittedChanges,
   autoCommitWithAIMessage,
-  validateBranchName,
-} from "../helpers.js";
+} from "../worktree.js";
+import { validateBranchName } from "../validation.js";
 import {
   getMainRepoPath,
-  setMainRepoPath,
   getCurrentBranch,
   setCurrentBranch,
   updateFooterStatus,
@@ -95,16 +91,16 @@ export async function handleWtMerge(
   }
 
   // 2. Ensure main repo path is known
-  if (getMainRepoPath() === "") {
-    const mainRepo = await detectMainRepo(pi, ctx.cwd);
-    if (!mainRepo) {
-      ctx.ui.notify("Not inside a git repository", "error");
-      return;
-    }
-    setMainRepoPath(mainRepo);
+  if (!(await ensureMainRepo(pi, ctx))) return;
+
+  // 3. Guard: cannot merge the default branch into itself
+  const currentDefaultBranch = getDefaultBranch();
+  if (targetBranch === currentDefaultBranch) {
+    ctx.ui.notify("Cannot merge the " + currentDefaultBranch + " branch into itself", "error");
+    return;
   }
 
-  // 3. Find the worktree for the target branch
+  // 4. Find the worktree for the target branch
   const worktrees = await getWorktreeList(pi, getMainRepoPath());
   const wt = findWorktreeByBranch(worktrees, targetBranch);
   if (!wt) {
@@ -112,7 +108,7 @@ export async function handleWtMerge(
     return;
   }
 
-  // 3.5. Confirm destructive operation
+  // 5. Confirm destructive operation
   if (ctx.hasUI) {
     const confirmed = await ctx.ui.confirm(
       "Merge and remove worktree?",
@@ -126,7 +122,7 @@ export async function handleWtMerge(
     }
   }
 
-  // 4. Handle uncommitted changes in the worktree
+  // 6. Handle uncommitted changes in the worktree
   const dirty = await hasUncommittedChanges(pi, wt.path);
   if (dirty) {
     ctx.ui.notify("Auto-committing uncommitted changes in '" + targetBranch + "'...", "info");
@@ -134,27 +130,27 @@ export async function handleWtMerge(
     ctx.ui.notify("Committed: " + commitMsg, "info");
   }
 
-  // 5. Get the main branch name
+  // 7. Get the main branch name
   const mainWorktree = getMainWorktree(worktrees);
   const mainBranch = mainWorktree?.branchName ?? getDefaultBranch();
 
-  // 6. Stash main worktree if dirty
+  // 8. Stash main worktree if dirty
   const didStash = await stashMainIfDirty(pi, ctx);
 
-  // 7-8. Checkout main and merge
+  // 9. Checkout main and merge
   const ok = await checkoutAndMerge(pi, ctx, mainBranch, targetBranch, didStash);
   if (!ok) return;
 
-  // 9. Remove the worktree
+  // 10. Remove the worktree
   const removeResult = await gitExec(pi, ["worktree", "remove", "-f", wt.path], getMainRepoPath());
   if (removeResult.code !== 0) {
     ctx.ui.notify("Merged but failed to remove worktree: " + removeResult.stderr.trim(), "warning");
   }
 
-  // 10. Prune stale worktree data
+  // 11. Prune stale worktree data
   await gitExec(pi, ["worktree", "prune"], getMainRepoPath());
 
-  // 11. Update state and switch
+  // 12. Update state and switch
   setCurrentBranch(mainBranch);
   switchCwd(pi, ctx, getMainRepoPath());
   updateFooterStatus(ctx);

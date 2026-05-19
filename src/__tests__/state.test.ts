@@ -13,6 +13,8 @@ import {
   setCurrentWorktreePath,
   getCurrentBranch,
   setCurrentBranch,
+  getDefaultBranch,
+  setDefaultBranch,
   resetState,
   updateFooterStatus,
   restoreWorktreeFromBranch,
@@ -27,11 +29,12 @@ function makeWorktreeChangeEntry(
   mainRepoPath: string,
   currentWorktreePath: string,
   currentBranch: string,
+  extraData: Record<string, unknown> = {},
 ) {
   return {
     type: "custom" as const,
     customType: WORKTREE_CHANGE_TYPE,
-    data: { mainRepoPath, currentWorktreePath, currentBranch },
+    data: { mainRepoPath, currentWorktreePath, currentBranch, ...extraData },
   };
 }
 
@@ -128,14 +131,23 @@ describe("updateFooterStatus", () => {
 
     expect(ctx.ui.setStatus).not.toHaveBeenCalled();
   });
+
+  it("branch is default but path differs from main → sets status", () => {
+    setMainRepoPath("/repo");
+    setCurrentWorktreePath("/repo/.git/worktrees/feature");
+    setCurrentBranch("main");
+
+    const ctx = createMockContext();
+    updateFooterStatus(ctx);
+
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("worktree", expect.any(String));
+  });
 });
 
 // ============================================================================
 // restoreWorktreeFromBranch
 // ============================================================================
 describe("restoreWorktreeFromBranch", () => {
-  const originalCwd = "/original/cwd";
-
   it("valid entry → restores state", () => {
     setMainRepoPath(""); // start clean
 
@@ -150,7 +162,7 @@ describe("restoreWorktreeFromBranch", () => {
     vi.mocked(statSync).mockReturnValue({ isDirectory: () => true } as ReturnType<typeof statSync>);
     vi.mocked(existsSync).mockReturnValue(true);
 
-    restoreWorktreeFromBranch(ctx, originalCwd);
+    restoreWorktreeFromBranch(ctx);
 
     expect(getMainRepoPath()).toBe("/repo");
     expect(getCurrentWorktreePath()).toBe("/repo/.git/worktrees/feature");
@@ -172,7 +184,7 @@ describe("restoreWorktreeFromBranch", () => {
     // existsSync returns false for the deleted worktree path
     vi.mocked(existsSync).mockReturnValue(false);
 
-    restoreWorktreeFromBranch(ctx, originalCwd);
+    restoreWorktreeFromBranch(ctx);
 
     expect(getMainRepoPath()).toBe("/repo");
     expect(getCurrentWorktreePath()).toBe("/repo");
@@ -188,7 +200,7 @@ describe("restoreWorktreeFromBranch", () => {
       },
     });
 
-    restoreWorktreeFromBranch(ctx, originalCwd);
+    restoreWorktreeFromBranch(ctx);
 
     expect(getMainRepoPath()).toBe("");
     expect(getCurrentWorktreePath()).toBe("");
@@ -208,7 +220,7 @@ describe("restoreWorktreeFromBranch", () => {
 
     // Should not throw
     expect(() => {
-      restoreWorktreeFromBranch(ctx, originalCwd);
+      restoreWorktreeFromBranch(ctx);
     }).not.toThrow();
     expect(getMainRepoPath()).toBe("");
   });
@@ -229,11 +241,79 @@ describe("restoreWorktreeFromBranch", () => {
     vi.mocked(statSync).mockReturnValue({ isDirectory: () => true } as ReturnType<typeof statSync>);
     vi.mocked(existsSync).mockReturnValue(true);
 
-    restoreWorktreeFromBranch(ctx, originalCwd);
+    restoreWorktreeFromBranch(ctx);
 
     // Should use the LAST entry (iterates from the end)
     expect(getMainRepoPath()).toBe("/repo3");
     expect(getCurrentWorktreePath()).toBe("/repo3/.git/worktrees/third");
     expect(getCurrentBranch()).toBe("third");
+  });
+
+  // ── defaultBranch restoration from entry data ───────────────────
+  it("restores defaultBranch from entry data", () => {
+    setMainRepoPath("");
+    // Set initial defaultBranch to something different
+    setDefaultBranch("main");
+
+    const ctx = createMockContext({
+      sessionManager: {
+        getBranch: vi.fn(() => [
+          makeWorktreeChangeEntry("/repo", "/repo/.git/worktrees/feature", "feature", {
+            defaultBranch: "master",
+          }),
+        ]),
+      },
+    });
+
+    vi.mocked(statSync).mockReturnValue({ isDirectory: () => true } as ReturnType<typeof statSync>);
+    vi.mocked(existsSync).mockReturnValue(true);
+
+    restoreWorktreeFromBranch(ctx);
+
+    expect(getMainRepoPath()).toBe("/repo");
+    expect(getDefaultBranch()).toBe("master");
+  });
+
+  // ── non-directory statSync → skips entry ─────────────────────────
+  it("non-directory statSync → skips entry and continues", () => {
+    setMainRepoPath("");
+
+    const ctx = createMockContext({
+      sessionManager: {
+        getBranch: vi.fn(() => [makeWorktreeChangeEntry("/not-a-dir", "/not-a-dir/wt", "branch")]),
+      },
+    });
+
+    // statSync returns non-directory
+    vi.mocked(statSync).mockReturnValue({ isDirectory: () => false } as ReturnType<
+      typeof statSync
+    >);
+
+    restoreWorktreeFromBranch(ctx);
+
+    // Should skip entry — no state change
+    expect(getMainRepoPath()).toBe("");
+    expect(getCurrentWorktreePath()).toBe("");
+  });
+
+  // ── empty worktree path → falls back to main ────────────────────
+  it("empty worktree path → falls back to mainRepoPath", () => {
+    setMainRepoPath("");
+
+    const ctx = createMockContext({
+      sessionManager: {
+        getBranch: vi.fn(() => [makeWorktreeChangeEntry("/repo", "", "feature")]),
+      },
+    });
+
+    vi.mocked(statSync).mockReturnValue({ isDirectory: () => true } as ReturnType<typeof statSync>);
+    vi.mocked(existsSync).mockReturnValue(false); // empty path doesn't exist
+
+    restoreWorktreeFromBranch(ctx);
+
+    expect(getMainRepoPath()).toBe("/repo");
+    // Empty worktree path should fall back to mainRepoPath
+    expect(getCurrentWorktreePath()).toBe("/repo");
+    expect(getCurrentBranch()).toBe("main"); // falls back to defaultBranch which is "main"
   });
 });

@@ -77,7 +77,7 @@ A typical feature development workflow:
 # The footer shows: 🌳 feature/login
 
 # Switch back to the default branch for a quick fix
-# (You can always use "main" regardless of the actual default branch name)
+# (Use your repo's detected default branch name)
 /wt-switch main
 
 # Switch back to the feature worktree
@@ -89,6 +89,18 @@ A typical feature development workflow:
 # Remove an abandoned worktree without merging
 /wt-cleanup stale-experiment
 ```
+
+## Documentation
+
+| Document                                                   | Description                                              |
+| ---------------------------------------------------------- | -------------------------------------------------------- |
+| [Commands](docs/commands.md)                               | Detailed reference for all slash commands                |
+| [Examples](docs/examples.md)                               | Practical workflow walkthroughs                          |
+| [Configuration Reference](docs/configuration-reference.md) | `worktrees.baseDir` setting and path resolution          |
+| [Architecture](docs/architecture.md)                       | Module structure, dependency graph, and data flow        |
+| [State Management](docs/state-management.md)               | Session persistence and restoration                      |
+| [Testing](docs/testing.md)                                 | Running and writing tests for the extension              |
+| [Contributing](docs/contributing.md)                       | Development setup and contribution guidelines            |
 
 ## License
 

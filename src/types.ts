@@ -24,9 +24,3 @@ export interface WorktreeChangeData {
   /** Detected default branch name (e.g. "main", "master") */
   defaultBranch?: string;
 }
-
-/** Settings shape for the worktrees extension */
-export interface WorktreeSettings {
-  /** Base directory for worktrees (relative to main repo root). Default: "./.git/worktrees/" */
-  baseDir: string;
-}

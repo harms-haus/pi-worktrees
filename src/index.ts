@@ -11,7 +11,7 @@ import {
   updateFooterStatus,
   restoreWorktreeFromBranch,
 } from "./state.js";
-import { detectMainRepo, detectDefaultBranch } from "./helpers.js";
+import { detectMainRepo, detectDefaultBranch } from "./worktree.js";
 
 export default function (pi: ExtensionAPI): void {
   // ── /wt-create ──────────────────────────────────────────────────────
@@ -66,12 +66,12 @@ export default function (pi: ExtensionAPI): void {
       const defaultBranch = await detectDefaultBranch(pi, ctx.cwd);
       setDefaultBranch(defaultBranch);
     }
-    restoreWorktreeFromBranch(ctx, ctx.cwd);
+    restoreWorktreeFromBranch(ctx);
     updateFooterStatus(ctx);
   });
 
   pi.on("session_tree", (_event, ctx) => {
-    restoreWorktreeFromBranch(ctx, ctx.cwd);
+    restoreWorktreeFromBranch(ctx);
     updateFooterStatus(ctx);
   });
 
