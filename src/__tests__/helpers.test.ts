@@ -30,14 +30,14 @@ describe("parseWorktreePorcelain", () => {
 
     expect(result).toHaveLength(2);
 
-    expect(result[0]).toEqual({
+    expect(result[0]!).toEqual({
       path: "/home/user/project",
       head: "abc123def456",
       branch: "refs/heads/main",
       branchName: "main",
     });
 
-    expect(result[1]).toEqual({
+    expect(result[1]!).toEqual({
       path: "/home/user/project/.git/worktrees/feature",
       head: "def789abc012",
       branch: "refs/heads/feature",
@@ -55,7 +55,7 @@ describe("parseWorktreePorcelain", () => {
     const result = parseWorktreePorcelain(output);
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({
+    expect(result[0]!).toEqual({
       path: "/home/user/project",
       head: "abc123def456",
       branch: "refs/heads/main",
@@ -69,8 +69,8 @@ describe("parseWorktreePorcelain", () => {
     const result = parseWorktreePorcelain(output);
 
     expect(result).toHaveLength(1);
-    expect(result[0].branchName).toBe("detached");
-    expect(result[0].branch).toBe("detached");
+    expect(result[0]!.branchName).toBe("detached");
+    expect(result[0]!.branch).toBe("detached");
   });
 
   it("handles empty output → empty array", () => {
@@ -88,7 +88,7 @@ describe("parseWorktreePorcelain", () => {
 
     const result = parseWorktreePorcelain(output);
     expect(result).toHaveLength(1);
-    expect(result[0].branchName).toBe("main");
+    expect(result[0]!.branchName).toBe("main");
   });
 });
 
@@ -238,8 +238,8 @@ describe("getWorktreeList", () => {
     const result = await getWorktreeList(api, "/repo");
 
     expect(result).toHaveLength(2);
-    expect(result[0].branchName).toBe("main");
-    expect(result[1].branchName).toBe("feature");
+    expect(result[0]!.branchName).toBe("main");
+    expect(result[1]!.branchName).toBe("feature");
   });
 
   it("returns empty array when git command fails (non-zero code)", async () => {

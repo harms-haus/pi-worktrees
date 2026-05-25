@@ -101,7 +101,7 @@ export async function detectDefaultBranch(pi: ExtensionAPI, cwd: string): Promis
   const symRefResult = await gitExec(pi, ["symbolic-ref", "refs/remotes/origin/HEAD"], cwd);
   if (symRefResult.code === 0) {
     const match = symRefResult.stdout.trim().match(/^refs\/remotes\/origin\/(.+)$/);
-    if (match) return match[1];
+    if (match && match[1]) return match[1];
   }
   // Fallback: get branch from main worktree
   const worktrees = await getWorktreeList(pi, cwd);

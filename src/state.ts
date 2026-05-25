@@ -77,8 +77,11 @@ export function restoreWorktreeFromBranch(ctx: ExtensionContext): void {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (
+      entry &&
       entry.type === "custom" &&
+      "customType" in entry &&
       entry.customType === WORKTREE_CHANGE_TYPE &&
+      "data" in entry &&
       isValidWorktreeData(entry.data)
     ) {
       const data = entry.data;

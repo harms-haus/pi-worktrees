@@ -75,7 +75,9 @@ export function captureHandlers(
   onMock: ReturnType<typeof vi.fn>,
 ): Record<string, (...args: unknown[]) => unknown> {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
-  for (const [eventName, handler] of onMock.mock.calls) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const calls = onMock.mock.calls ?? [];
+  for (const [eventName, handler] of calls) {
     handlers[eventName as string] = handler;
   }
   return handlers;
@@ -85,7 +87,7 @@ export function captureHandlers(
  * Extract the name and options from the first `registerCommand` call.
  */
 export function captureCommand(registerCommandMock: ReturnType<typeof vi.fn>) {
-  const [name, options] = registerCommandMock.mock.calls[0];
+  const [name, options] = registerCommandMock.mock.calls[0]!;
   return { name, options };
 }
 

@@ -15,6 +15,7 @@ export default defineConfig({
         "src/**/helpers/**",
         "src/**/*.d.ts",
         "src/types.ts",
+        "src/types/**",
       ],
       thresholds: {
         statements: 90,

@@ -63,7 +63,7 @@ function setup() {
   // Extract registered commands by name
   const commands: Record<string, { options: Record<string, unknown>; index: number }> = {};
   for (let i = 0; i < registerCommand.mock.calls.length; i++) {
-    const [name, options] = registerCommand.mock.calls[i];
+    const [name, options] = registerCommand.mock.calls[i]!;
     commands[name as string] = { options, index: i };
   }
 
@@ -94,7 +94,7 @@ describe("pi-worktrees extension entry point", () => {
     const { commands } = setup();
 
     for (const name of ["wt-create", "wt-switch", "wt-merge", "wt-cleanup"]) {
-      const cmd = commands[name];
+      const cmd = commands[name]!;
       expect(cmd.options).toHaveProperty("description");
       expect(typeof cmd.options.description).toBe("string");
       expect((cmd.options.description as string).length).toBeGreaterThan(0);
@@ -106,7 +106,7 @@ describe("pi-worktrees extension entry point", () => {
     const { commands } = setup();
 
     for (const name of ["wt-create", "wt-switch", "wt-merge", "wt-cleanup"]) {
-      const cmd = commands[name];
+      const cmd = commands[name]!;
       expect(cmd.options).toHaveProperty("getArgumentCompletions");
       expect(typeof cmd.options.getArgumentCompletions).toBe("function");
     }
@@ -128,7 +128,7 @@ describe("pi-worktrees extension entry point", () => {
     const ctx = createMockContext();
 
     // wt-create
-    const createHandler = commands["wt-create"].options.handler as (
+    const createHandler = commands["wt-create"]!.options.handler as (
       args: string,
       ctx: unknown,
     ) => Promise<void>;
@@ -138,7 +138,7 @@ describe("pi-worktrees extension entry point", () => {
     vi.clearAllMocks();
 
     // wt-switch
-    const switchHandler = commands["wt-switch"].options.handler as (
+    const switchHandler = commands["wt-switch"]!.options.handler as (
       args: string,
       ctx: unknown,
     ) => Promise<void>;
@@ -148,7 +148,7 @@ describe("pi-worktrees extension entry point", () => {
     vi.clearAllMocks();
 
     // wt-merge
-    const mergeHandler = commands["wt-merge"].options.handler as (
+    const mergeHandler = commands["wt-merge"]!.options.handler as (
       args: string,
       ctx: unknown,
     ) => Promise<void>;
@@ -158,7 +158,7 @@ describe("pi-worktrees extension entry point", () => {
     vi.clearAllMocks();
 
     // wt-cleanup
-    const cleanupHandler = commands["wt-cleanup"].options.handler as (
+    const cleanupHandler = commands["wt-cleanup"]!.options.handler as (
       args: string,
       ctx: unknown,
     ) => Promise<void>;
@@ -176,7 +176,7 @@ describe("pi-worktrees extension entry point", () => {
     vi.mocked(detectDefaultBranch).mockResolvedValue("main");
 
     // Call the captured session_start handler
-    const sessionStartHandler = handlers["session_start"];
+    const sessionStartHandler = handlers["session_start"]!;
     await sessionStartHandler({}, ctx);
 
     // Assert detectMainRepo was called with pi and ctx.cwd
@@ -199,7 +199,7 @@ describe("pi-worktrees extension entry point", () => {
 
     vi.mocked(detectMainRepo).mockResolvedValue(null);
 
-    const sessionStartHandler = handlers["session_start"];
+    const sessionStartHandler = handlers["session_start"]!;
     await sessionStartHandler({}, ctx);
 
     expect(setMainRepoPath).not.toHaveBeenCalled();
@@ -214,7 +214,7 @@ describe("pi-worktrees extension entry point", () => {
     const { handlers } = setup();
     const ctx = createMockContext();
 
-    const sessionTreeHandler = handlers["session_tree"];
+    const sessionTreeHandler = handlers["session_tree"]!;
     sessionTreeHandler({}, ctx);
 
     expect(restoreWorktreeFromBranch).toHaveBeenCalledWith(ctx);
@@ -225,7 +225,7 @@ describe("pi-worktrees extension entry point", () => {
   it("session_shutdown handler resets state", () => {
     const { handlers } = setup();
 
-    const sessionShutdownHandler = handlers["session_shutdown"];
+    const sessionShutdownHandler = handlers["session_shutdown"]!;
     sessionShutdownHandler();
 
     expect(resetState).toHaveBeenCalled();
@@ -236,7 +236,7 @@ describe("pi-worktrees extension entry point", () => {
     const { commands } = setup();
 
     for (const name of ["wt-create", "wt-switch", "wt-merge", "wt-cleanup"]) {
-      const cmd = commands[name];
+      const cmd = commands[name]!;
       const completionsFn = cmd.options.getArgumentCompletions as (
         prefix: string,
       ) => Promise<unknown>;
