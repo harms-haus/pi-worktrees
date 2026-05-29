@@ -94,10 +94,8 @@ describe("getUntrackedFiles", () => {
 
     await getUntrackedFiles(api, "/my/cwd");
 
-    expect(exec).toHaveBeenCalledWith(
-      "git",
-      ["ls-files", "-z", "--others", "--exclude-standard"],
-      { cwd: "/my/cwd" },
-    );
+    expect(exec).toHaveBeenCalledWith("git", ["ls-files", "-z", "--others", "--exclude-standard"], {
+      cwd: "/my/cwd",
+    });
   });
 });

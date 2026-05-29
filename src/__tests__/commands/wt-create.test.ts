@@ -210,9 +210,7 @@ describe("handleWtCreate", () => {
   it("copies untracked files on new branch creation", async () => {
     vi.mocked(getUntrackedFiles).mockResolvedValue(["untracked.txt"]);
 
-    vi.mocked(gitExec)
-      .mockResolvedValueOnce(errorResult())
-      .mockResolvedValueOnce(successResult());
+    vi.mocked(gitExec).mockResolvedValueOnce(errorResult()).mockResolvedValueOnce(successResult());
 
     const ctx = createMockContext();
     await handleWtCreate("feature", ctx, api);
@@ -224,9 +222,7 @@ describe("handleWtCreate", () => {
   it("uses ctx.cwd as source path for untracked files", async () => {
     vi.mocked(getUntrackedFiles).mockResolvedValue(["file.txt"]);
 
-    vi.mocked(gitExec)
-      .mockResolvedValueOnce(errorResult())
-      .mockResolvedValueOnce(successResult());
+    vi.mocked(gitExec).mockResolvedValueOnce(errorResult()).mockResolvedValueOnce(successResult());
 
     const customCtx = createMockContext({ cwd: "/custom/source/path" });
     await handleWtCreate("feature", customCtx, api);
@@ -242,9 +238,7 @@ describe("handleWtCreate", () => {
   it("handles empty untracked files list gracefully", async () => {
     vi.mocked(getUntrackedFiles).mockResolvedValue([]);
 
-    vi.mocked(gitExec)
-      .mockResolvedValueOnce(errorResult())
-      .mockResolvedValueOnce(successResult());
+    vi.mocked(gitExec).mockResolvedValueOnce(errorResult()).mockResolvedValueOnce(successResult());
 
     const ctx = createMockContext();
     await handleWtCreate("feature", ctx, api);

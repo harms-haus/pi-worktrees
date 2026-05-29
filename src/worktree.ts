@@ -209,7 +209,8 @@ export function copyUntrackedFiles(
 
       // Prevent path traversal
       const resolvedDest = resolve(destPath);
-      if (!resolvedDest.startsWith(resolve(destDir) + "/") && resolvedDest !== resolve(destDir)) continue;
+      if (!resolvedDest.startsWith(resolve(destDir) + "/") && resolvedDest !== resolve(destDir))
+        continue;
 
       // Skip directories (submodule filter) and symlinks
       const stat = lstatSync(srcPath);

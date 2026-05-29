@@ -81,7 +81,10 @@ import { MAIN_REPO, MAIN_BRANCH, FEATURE_BRANCH, FEATURE_PATH } from "./helpers/
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(lstatSync).mockReturnValue({ isDirectory: () => false, isSymbolicLink: () => false } as any);
+  vi.mocked(lstatSync).mockReturnValue({
+    isDirectory: () => false,
+    isSymbolicLink: () => false,
+  } as any);
   vi.mocked(existsSync).mockReturnValue(false);
 });
 
@@ -583,7 +586,10 @@ describe("copyUntrackedFiles", () => {
   });
 
   it("skips directories (submodule filter)", () => {
-    vi.mocked(lstatSync).mockReturnValue({ isDirectory: () => true, isSymbolicLink: () => false } as any);
+    vi.mocked(lstatSync).mockReturnValue({
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+    } as any);
 
     copyUntrackedFiles(["submodule-dir"], "/src", "/dest");
 
@@ -619,7 +625,10 @@ describe("copyUntrackedFiles", () => {
   });
 
   it("skips symbolic links", () => {
-    vi.mocked(lstatSync).mockReturnValue({ isDirectory: () => false, isSymbolicLink: () => true } as any);
+    vi.mocked(lstatSync).mockReturnValue({
+      isDirectory: () => false,
+      isSymbolicLink: () => true,
+    } as any);
     copyUntrackedFiles(["symlink-file"], "/src", "/dest");
     expect(copyFileSync).not.toHaveBeenCalled();
   });
