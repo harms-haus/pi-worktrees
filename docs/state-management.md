@@ -14,12 +14,12 @@ pi-worktrees uses **module-level closure variables** to track the active worktre
 
 Defined in `src/state.ts`, these four closure variables are the single source of truth during a session:
 
-| Variable | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `mainRepoPath` | `string` | `""` | Absolute path to the main git worktree (repo root). Set once on `session_start`. |
-| `currentWorktreePath` | `string` | `""` | Absolute path to the currently active worktree. Same as `mainRepoPath` when on the default branch. |
-| `currentBranch` | `string` | `"main"` | Branch name of the active worktree. Set to the default branch name when on main. |
-| `defaultBranch` | `string` | `"main"` | Detected default branch name (e.g. `"main"`, `"master"`, `"develop"`). |
+| Variable              | Type     | Default  | Purpose                                                                                            |
+| --------------------- | -------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `mainRepoPath`        | `string` | `""`     | Absolute path to the main git worktree (repo root). Set once on `session_start`.                   |
+| `currentWorktreePath` | `string` | `""`     | Absolute path to the currently active worktree. Same as `mainRepoPath` when on the default branch. |
+| `currentBranch`       | `string` | `"main"` | Branch name of the active worktree. Set to the default branch name when on main.                   |
+| `defaultBranch`       | `string` | `"main"` | Detected default branch name (e.g. `"main"`, `"master"`, `"develop"`).                             |
 
 Each variable has a getter and setter exported from `src/state.ts`:
 
@@ -80,12 +80,12 @@ export interface WorktreeChangeData {
 }
 ```
 
-| Field | Required | Description |
-| --- | --- | --- |
-| `mainRepoPath` | ✓ | Absolute path to the main repo. Validated as an existing directory during restoration. |
-| `currentWorktreePath` | ✓ | Absolute path to the active worktree. Falls back to `mainRepoPath` if the path no longer exists. |
-| `currentBranch` | ✓ | Branch name of the active worktree. |
-| `defaultBranch` | ✗ | Detected default branch. Restored when present in the entry data. |
+| Field                 | Required | Description                                                                                      |
+| --------------------- | -------- | ------------------------------------------------------------------------------------------------ |
+| `mainRepoPath`        | ✓        | Absolute path to the main repo. Validated as an existing directory during restoration.           |
+| `currentWorktreePath` | ✓        | Absolute path to the active worktree. Falls back to `mainRepoPath` if the path no longer exists. |
+| `currentBranch`       | ✓        | Branch name of the active worktree.                                                              |
+| `defaultBranch`       | ✗        | Detected default branch. Restored when present in the entry data.                                |
 
 ---
 
@@ -157,11 +157,11 @@ Only runs when `ctx.hasUI` is `true` (no-op in headless mode).
 
 ## Who Writes State
 
-| Operation | Who | What changes |
-| --- | --- | --- |
-| `session_start` | `src/index.ts` | Sets `mainRepoPath`, `defaultBranch`; restores from session |
-| `/wt-create` | `src/commands/wt-create.ts` | Sets `currentBranch`, calls `switchCwd` (which sets `currentWorktreePath` + appends entry) |
-| `/wt-switch` | `src/commands/wt-switch.ts` | Sets `currentBranch`, calls `switchCwd` |
-| `/wt-merge` | `src/commands/wt-merge.ts` | Sets `currentBranch` to default, calls `switchCwd` |
-| `/wt-cleanup` | `src/commands/wt-cleanup.ts` | Sets `currentBranch` to default if removed current worktree, calls `switchCwd` |
-| `session_shutdown` | `src/index.ts` | Calls `resetState()` |
+| Operation          | Who                          | What changes                                                                               |
+| ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `session_start`    | `src/index.ts`               | Sets `mainRepoPath`, `defaultBranch`; restores from session                                |
+| `/wt-create`       | `src/commands/wt-create.ts`  | Sets `currentBranch`, calls `switchCwd` (which sets `currentWorktreePath` + appends entry) |
+| `/wt-switch`       | `src/commands/wt-switch.ts`  | Sets `currentBranch`, calls `switchCwd`                                                    |
+| `/wt-merge`        | `src/commands/wt-merge.ts`   | Sets `currentBranch` to default, calls `switchCwd`                                         |
+| `/wt-cleanup`      | `src/commands/wt-cleanup.ts` | Sets `currentBranch` to default if removed current worktree, calls `switchCwd`             |
+| `session_shutdown` | `src/index.ts`               | Calls `resetState()`                                                                       |

@@ -70,6 +70,9 @@ import {
   ensureMainRepo,
   autoCommitWithAIMessage,
   copyUntrackedFiles,
+  analyzeFile,
+  copyFilesWithOverwrite,
+  formatFileListForConfirm,
 } from "../worktree.js";
 import { WORKTREE_CHANGE_TYPE } from "../types.js";
 import { createMockAPI, createMockContext } from "./helpers/mocks.js";
@@ -645,5 +648,261 @@ describe("copyUntrackedFiles", () => {
     expect(copyFileSync).toHaveBeenCalledWith("/src/a.txt", "/dest/a.txt");
     expect(copyFileSync).toHaveBeenCalledWith("/src/b.txt", "/dest/b.txt");
     expect(copyFileSync).toHaveBeenCalledWith("/src/dir/c.txt", "/dest/dir/c.txt");
+  });
+});
+
+// ============================================================================
+// analyzeFile
+// ============================================================================
+describe("analyzeFile", () => {
+  it("returns { isBinary: false, lines: N } for a text file with N lines", () => {
+    vi.mocked(readFileSync).mockImplementation((path: unknown) => {
+      if (typeof path === "string" && path.endsWith("test.txt")) {
+        return Buffer.from("line1\nline2\nline3\n");
+      }
+      throw new Error("unexpected readFileSync call");
+    });
+
+    const result = analyzeFile("/some/test.txt");
+
+    expect(result).toEqual({ isBinary: false, lines: 3 });
+  });
+
+  it("returns { isBinary: false, lines: 0 } for an empty file", () => {
+    vi.mocked(readFileSync).mockImplementation((path: unknown) => {
+      if (typeof path === "string" && path.endsWith("empty.txt")) {
+        return Buffer.alloc(0);
+      }
+      throw new Error("unexpected readFileSync call");
+    });
+
+    const result = analyzeFile("/some/empty.txt");
+
+    expect(result).toEqual({ isBinary: false, lines: 0 });
+  });
+
+  it("returns { isBinary: true, lines: null } for a binary file", () => {
+    vi.mocked(readFileSync).mockImplementation((path: unknown) => {
+      if (typeof path === "string" && path.endsWith("binary.bin")) {
+        return Buffer.from([0x00, 0x01, 0x02]);
+      }
+      throw new Error("unexpected readFileSync call");
+    });
+
+    const result = analyzeFile("/some/binary.bin");
+
+    expect(result).toEqual({ isBinary: true, lines: null });
+  });
+
+  it("returns { isBinary: false, lines: 0 } when readFileSync throws", () => {
+    vi.mocked(readFileSync).mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
+
+    const result = analyzeFile("/missing/file.txt");
+
+    expect(result).toEqual({ isBinary: false, lines: 0 });
+  });
+
+  it("returns { isBinary: false, lines: 0 } when lstatSync indicates symlink", () => {
+    vi.mocked(lstatSync).mockImplementation((path: unknown) => {
+      if (typeof path === "string" && path.endsWith("symlink.txt")) {
+        return {
+          isDirectory: () => false,
+          isSymbolicLink: () => true,
+        } as any;
+      }
+      return {
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      } as any;
+    });
+
+    const result = analyzeFile("/some/symlink.txt");
+
+    expect(result).toEqual({ isBinary: false, lines: 0 });
+    // Should NOT attempt to read the file
+    expect(readFileSync).not.toHaveBeenCalled();
+  });
+
+  it("returns { isBinary: false, lines: 0 } when lstatSync throws", () => {
+    vi.mocked(lstatSync).mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
+
+    const result = analyzeFile("/missing/file.txt");
+
+    expect(result).toEqual({ isBinary: false, lines: 0 });
+  });
+});
+
+// ============================================================================
+// copyFilesWithOverwrite
+// ============================================================================
+describe("copyFilesWithOverwrite", () => {
+  it("copies a single file", () => {
+    const failed = copyFilesWithOverwrite(["file.txt"], "/src", "/dest");
+
+    expect(failed).toEqual([]);
+    expect(copyFileSync).toHaveBeenCalledWith("/src/file.txt", "/dest/file.txt");
+  });
+
+  it("overwrites existing file", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+
+    const failed = copyFilesWithOverwrite(["file.txt"], "/src", "/dest");
+
+    expect(failed).toEqual([]);
+    // Unlike copyUntrackedFiles, this should still copy even when file exists
+    expect(copyFileSync).toHaveBeenCalledWith("/src/file.txt", "/dest/file.txt");
+  });
+
+  it("creates parent directories for nested paths", () => {
+    const failed = copyFilesWithOverwrite(["a/b/c.txt"], "/src", "/dest");
+
+    expect(failed).toEqual([]);
+    expect(mkdirSync).toHaveBeenCalledWith("/dest/a/b", { recursive: true });
+    expect(copyFileSync).toHaveBeenCalledWith("/src/a/b/c.txt", "/dest/a/b/c.txt");
+  });
+
+  it("skips directories", () => {
+    vi.mocked(lstatSync).mockReturnValue({
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+    } as any);
+
+    const failed = copyFilesWithOverwrite(["submodule-dir"], "/src", "/dest");
+
+    expect(failed).toEqual([]);
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("skips symbolic links", () => {
+    vi.mocked(lstatSync).mockReturnValue({
+      isDirectory: () => false,
+      isSymbolicLink: () => true,
+    } as any);
+
+    const failed = copyFilesWithOverwrite(["symlink-file"], "/src", "/dest");
+
+    expect(failed).toEqual([]);
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("prevents destination path traversal and adds to failed", () => {
+    const failed = copyFilesWithOverwrite(["../../../etc/passwd"], "/src", "/dest");
+
+    expect(failed).toEqual(["../../../etc/passwd"]);
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("prevents source path traversal and adds to failed", () => {
+    const failed = copyFilesWithOverwrite(["../../etc/passwd"], "/src", "/dest");
+
+    expect(failed).toEqual(["../../etc/passwd"]);
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("adds to failed when destination is a symlink", () => {
+    vi.mocked(lstatSync).mockImplementation((path: unknown) => {
+      if (typeof path === "string" && path.startsWith("/dest/")) {
+        return {
+          isDirectory: () => false,
+          isSymbolicLink: () => true,
+        } as any;
+      }
+      return {
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      } as any;
+    });
+
+    const failed = copyFilesWithOverwrite(["file.txt"], "/src", "/dest");
+
+    expect(failed).toEqual(["file.txt"]);
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("returns failed files on copy error", () => {
+    vi.mocked(copyFileSync).mockImplementation(() => {
+      throw new Error("copy failed");
+    });
+
+    const failed = copyFilesWithOverwrite(["bad.txt"], "/src", "/dest");
+
+    expect(failed).toEqual(["bad.txt"]);
+  });
+
+  it("is no-op for empty list", () => {
+    const failed = copyFilesWithOverwrite([], "/src", "/dest");
+
+    expect(failed).toEqual([]);
+    expect(copyFileSync).not.toHaveBeenCalled();
+    expect(mkdirSync).not.toHaveBeenCalled();
+    expect(lstatSync).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// formatFileListForConfirm
+// ============================================================================
+describe("formatFileListForConfirm", () => {
+  const theme = {
+    fg: vi.fn((color: string, text: string) => `<${color}>${text}</${color}>`),
+  };
+
+  beforeEach(() => {
+    theme.fg.mockClear();
+  });
+
+  it("returns empty string for empty list", () => {
+    const result = formatFileListForConfirm([], theme);
+
+    expect(result).toBe("");
+  });
+
+  it("formats text file with green color-coded line count", () => {
+    const files = [{ path: "src/app.ts", isBinary: false, lines: 42 }];
+
+    const result = formatFileListForConfirm(files, theme);
+
+    expect(theme.fg).toHaveBeenCalledWith("success", "+42");
+    expect(result).toContain("src/app.ts");
+    expect(result).toContain("+42");
+  });
+
+  it("formats binary file with (binary) label", () => {
+    const files = [{ path: "image.png", isBinary: true, lines: null }];
+
+    const result = formatFileListForConfirm(files, theme);
+
+    expect(result).toContain("image.png");
+    expect(result).toContain("(binary)");
+    // fg should NOT be called for binary files
+    expect(theme.fg).not.toHaveBeenCalled();
+  });
+
+  it("formats mixed list with numbered entries", () => {
+    const files = [
+      { path: "readme.md", isBinary: false, lines: 10 },
+      { path: "logo.png", isBinary: true, lines: null },
+      { path: "util.ts", isBinary: false, lines: 5 },
+    ];
+
+    const result = formatFileListForConfirm(files, theme);
+
+    expect(result).toContain("1. readme.md");
+    expect(result).toContain("2. logo.png");
+    expect(result).toContain("3. util.ts");
+    expect(result).toContain("(binary)");
+  });
+
+  it("prepends header line", () => {
+    const files = [{ path: "file.txt", isBinary: false, lines: 1 }];
+
+    const result = formatFileListForConfirm(files, theme);
+
+    expect(result.startsWith("The following untracked files will be copied to main:"));
+    expect(result.split("\n")[0]).toBe("The following untracked files will be copied to main:");
   });
 });

@@ -14,9 +14,9 @@ Create a new git worktree and switch to it.
 /wt-create <branch-name>
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `branch-name` | ✓ | Name of the branch to create or check out |
+| Parameter     | Required | Description                               |
+| ------------- | -------- | ----------------------------------------- |
+| `branch-name` | ✓        | Name of the branch to create or check out |
 
 **Tab completion:** Branch names from existing worktrees.
 
@@ -57,13 +57,13 @@ When a worktree is created, untracked files from the current working directory a
 
 ### Error Cases
 
-| Condition | Message |
-| --- | --- |
-| No branch name provided | `"Usage: /wt-create <branch-name>"` |
-| Invalid branch name | Specific validation error (e.g. `"Branch name contains invalid character: '..'"`) |
-| Not in a git repo | `"Not inside a git repository"` |
-| Directory already exists | `"Directory already exists: <path>"` |
-| `git worktree add` fails | `"Failed to create worktree: <stderr>"` |
+| Condition                | Message                                                                           |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| No branch name provided  | `"Usage: /wt-create <branch-name>"`                                               |
+| Invalid branch name      | Specific validation error (e.g. `"Branch name contains invalid character: '..'"`) |
+| Not in a git repo        | `"Not inside a git repository"`                                                   |
+| Directory already exists | `"Directory already exists: <path>"`                                              |
+| `git worktree add` fails | `"Failed to create worktree: <stderr>"`                                           |
 
 ---
 
@@ -78,9 +78,9 @@ Switch to an existing worktree by branch name, or back to the default branch.
 /wt-switch main
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `branch-name` | ✓ | Name of the worktree branch to switch to, or the default branch name |
+| Parameter     | Required | Description                                                          |
+| ------------- | -------- | -------------------------------------------------------------------- |
+| `branch-name` | ✓        | Name of the worktree branch to switch to, or the default branch name |
 
 **Tab completion:** Branch names from existing worktrees plus the default branch.
 
@@ -98,11 +98,11 @@ Switch to an existing worktree by branch name, or back to the default branch.
 
 ### Error Cases
 
-| Condition | Message |
-| --- | --- |
-| No branch name provided | `"Usage: /wt-switch <branch-name>\|main"` |
-| Not in a git repo | `"Not inside a git repository"` |
-| No worktree for branch | `"No worktree found for branch '<name>'. Use /wt-create <name> first."` |
+| Condition               | Message                                                                 |
+| ----------------------- | ----------------------------------------------------------------------- |
+| No branch name provided | `"Usage: /wt-switch <branch-name>\|main"`                               |
+| Not in a git repo       | `"Not inside a git repository"`                                         |
+| No worktree for branch  | `"No worktree found for branch '<name>'. Use /wt-create <name> first."` |
 
 ---
 
@@ -117,9 +117,9 @@ Merge a worktree's branch into the default branch and remove the worktree. Auto-
 /wt-merge                    # merges the current worktree's branch
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `branch-name` | ✗ | Branch to merge. Defaults to the current branch. |
+| Parameter     | Required | Description                                      |
+| ------------- | -------- | ------------------------------------------------ |
+| `branch-name` | ✗        | Branch to merge. Defaults to the current branch. |
 
 **Tab completion:** Branch names from existing worktrees.
 
@@ -142,17 +142,30 @@ Merge a worktree's branch into the default branch and remove the worktree. Auto-
 3. **Detect main repo** if not already known.
 4. **Find the worktree** for the target branch.
 5. **Confirm** the destructive operation via `ctx.ui.confirm()`.
-6. **Auto-commit** if the worktree has uncommitted changes:
+6. **Detect untracked files** for copy-back (before auto-commit makes them tracked) — `getUntrackedFiles(pi, wt.path)` lists untracked files in the worktree, filters to those not already present in main (via `existsSync`), analyzes each file (`analyzeFile` — binary detection and line counting), then shows a confirmation dialog "Copy untracked files to main?" listing the files with color-coded line counts. If declined, notifies "Skipping untracked file copy." and proceeds without copying.
+7. **Auto-commit** if the worktree has uncommitted changes:
    - Stages all changes (`git add -A`).
    - Generates AI commit message via `pi --print`.
    - Falls back to `"chore: auto-commit worktree changes"` on failure.
    - Commits with the generated message.
-7. **Stash main worktree** if it has uncommitted changes.
-8. **Checkout default branch** and merge target branch.
-9. **Pop stash** if main was stashed.
-10. **Remove the worktree** via `git worktree remove -f`.
-11. **Prune** stale worktree metadata.
-12. **Update state**: set `currentBranch` to default, call `switchCwd()`, update footer, notify success.
+8. **Stash main worktree** if it has uncommitted changes.
+9. **Checkout default branch** and merge target branch.
+10. **Pop stash** if main was stashed.
+11. **Copy confirmed untracked files** — `copyFilesWithOverwrite(filesToCopy, wt.path, getMainRepoPath())` copies the confirmed files from the worktree to the main repo. Existing files in main are overwritten. Individual copy failures are reported as warnings.
+12. **Remove the worktree** via `git worktree remove -f`.
+13. **Prune** stale worktree metadata.
+14. **Update state**: set `currentBranch` to default, call `switchCwd()`, update footer, notify success.
+
+### Untracked Files
+
+When merging a worktree, untracked files in the worktree that don't exist in the main working directory are detected and offered for copy-back to main.
+
+- **Detection**: `getUntrackedFiles(pi, wt.path)` via `git ls-files -z --others --exclude-standard` — respects `.gitignore`.
+- **Filtering**: only files not already present in main (via `existsSync`) are candidates.
+- **Analysis**: each file is analyzed via `analyzeFile()` — checks for binary content (NUL byte scan of first 8 KB) and counts lines. Binary files show `(binary)`, text files show color-coded line counts (e.g. `+42` in green).
+- **Confirmation**: a dialog lists the candidate files and asks "Copy untracked files to main?". If declined, copy is skipped entirely (info notification).
+- **Copy**: happens after the merge succeeds but before the worktree is removed. `copyFilesWithOverwrite()` copies files, overwriting any existing files in main. Individual copy failures are reported as warnings but don't prevent the merge from completing.
+- **Timing**: detection runs **before** auto-commit so that untracked files are captured before `git add -A` stages them.
 
 ### Merge Conflict Handling
 
@@ -165,17 +178,19 @@ If the merge has conflicts:
 
 ### Error Cases
 
-| Condition | Message |
-| --- | --- |
-| No args + on default branch | `"Usage: /wt-merge <branch-name> (currently on <default>, no worktree to merge)"` |
-| Invalid branch name | Specific validation error |
-| Not in a git repo | `"Not inside a git repository"` |
-| Merging default into itself | `"Cannot merge the <default> branch into itself"` |
-| No worktree for branch | `"No worktree found for branch '<name>'"` |
-| User cancels confirmation | `"Merge cancelled"` |
-| Checkout fails | `"Failed to checkout <branch>: <stderr>"` |
-| Merge conflicts | `"Merge has conflicts. Run 'git merge --abort' to cancel..."` |
-| Worktree remove fails | `"Merged but failed to remove worktree: <stderr>"` (warning, not error) |
+| Condition                        | Message                                                                           |
+| -------------------------------- | --------------------------------------------------------------------------------- |
+| No args + on default branch      | `"Usage: /wt-merge <branch-name> (currently on <default>, no worktree to merge)"` |
+| Invalid branch name              | Specific validation error                                                         |
+| Not in a git repo                | `"Not inside a git repository"`                                                   |
+| Merging default into itself      | `"Cannot merge the <default> branch into itself"`                                 |
+| No worktree for branch           | `"No worktree found for branch '<name>'"`                                         |
+| User cancels confirmation        | `"Merge cancelled"`                                                               |
+| Checkout fails                   | `"Failed to checkout <branch>: <stderr>"`                                         |
+| Merge conflicts                  | `"Merge has conflicts. Run 'git merge --abort' to cancel..."`                     |
+| Untracked copy — user declines   | `"Skipping untracked file copy."` (info)                                          |
+| Untracked copy — partial failure | `"Warning: failed to copy N file(s): ..."` (warning)                              |
+| Worktree remove fails            | `"Merged but failed to remove worktree: <stderr>"` (warning, not error)           |
 
 ---
 
@@ -190,9 +205,9 @@ Remove a worktree without merging. Refuses if there are uncommitted changes. Req
 /wt-cleanup                  # cleans up the current worktree
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `branch-name` | ✗ | Branch whose worktree to remove. Defaults to the current branch. |
+| Parameter     | Required | Description                                                      |
+| ------------- | -------- | ---------------------------------------------------------------- |
+| `branch-name` | ✗        | Branch whose worktree to remove. Defaults to the current branch. |
 
 **Tab completion:** Branch names from existing worktrees.
 
@@ -232,13 +247,13 @@ After removing the worktree, `/wt-cleanup` attempts `git branch -d <name>`:
 
 ### Error Cases
 
-| Condition | Message |
-| --- | --- |
-| No args + on default branch | `"Usage: /wt-cleanup <branch-name> (currently on <default>, specify a worktree to clean up)"` |
-| Invalid branch name | Specific validation error |
-| Not in a git repo | `"Not inside a git repository"` |
-| Target is the default branch | `"Cannot remove the <default> worktree"` |
-| No worktree for branch | `"No worktree found for branch '<name>'"` |
-| Uncommitted changes | `"Worktree '<name>' has uncommitted changes. Use /wt-merge..."` |
-| User cancels confirmation | `"Cleanup cancelled"` |
-| Remove fails (even double-force) | `"Failed to remove worktree: <stderr>"` |
+| Condition                        | Message                                                                                       |
+| -------------------------------- | --------------------------------------------------------------------------------------------- |
+| No args + on default branch      | `"Usage: /wt-cleanup <branch-name> (currently on <default>, specify a worktree to clean up)"` |
+| Invalid branch name              | Specific validation error                                                                     |
+| Not in a git repo                | `"Not inside a git repository"`                                                               |
+| Target is the default branch     | `"Cannot remove the <default> worktree"`                                                      |
+| No worktree for branch           | `"No worktree found for branch '<name>'"`                                                     |
+| Uncommitted changes              | `"Worktree '<name>' has uncommitted changes. Use /wt-merge..."`                               |
+| User cancels confirmation        | `"Cleanup cancelled"`                                                                         |
+| Remove fails (even double-force) | `"Failed to remove worktree: <stderr>"`                                                       |

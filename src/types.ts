@@ -24,3 +24,9 @@ export interface WorktreeChangeData {
   /** Detected default branch name (e.g. "main", "master") */
   defaultBranch?: string;
 }
+
+export interface UntrackedFileInfo {
+  path: string;
+  lines: number | null;
+  isBinary: boolean;
+}

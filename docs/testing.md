@@ -6,13 +6,13 @@ Test suite for pi-worktrees, covering command handlers, state management, git he
 
 ## Test Framework
 
-|                 |                                                            |
-| --------------- | ---------------------------------------------------------- |
-| **Runner**      | [Vitest](https://vitest.dev/) ^4.1.6                     |
-| **Config**      | `vitest.config.ts`                                         |
-| **Setup**       | `src/__tests__/setup.ts` — mocks `@earendil-works/pi-coding-agent` |
-| **Location**    | `src/**/*.test.ts`                                         |
-| **Coverage**    | v8 provider, 90% threshold on all metrics                  |
+|              |                                                                    |
+| ------------ | ------------------------------------------------------------------ |
+| **Runner**   | [Vitest](https://vitest.dev/) ^4.1.6                               |
+| **Config**   | `vitest.config.ts`                                                 |
+| **Setup**    | `src/__tests__/setup.ts` — mocks `@earendil-works/pi-coding-agent` |
+| **Location** | `src/**/*.test.ts`                                                 |
+| **Coverage** | v8 provider, 90% threshold on all metrics                          |
 
 ---
 
@@ -36,18 +36,18 @@ npx vitest run --coverage
 
 ## Test Files
 
-| File | What it tests |
-| --- | --- |
-| `src/__tests__/index.test.ts` | Extension entry point — command registration, event handler wiring |
-| `src/__tests__/git.test.ts` | `getUntrackedFiles` — error handling, empty output, NUL-separated parsing, empty-string filtering, paths with spaces, correct git arguments |
-| `src/__tests__/helpers.test.ts` | Git utilities — `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `findWorktreeByBranch`, `getMainWorktree`, `validateBranchName`, `expandTilde` |
-| `src/__tests__/worktree.test.ts` | Worktree operations — `resolveBaseDir`, `switchCwd`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `ensureMainRepo`, `autoCommitWithAIMessage`, `copyUntrackedFiles` |
-| `src/__tests__/state.test.ts` | State module — getters/setters, `resetState`, `updateFooterStatus`, `restoreWorktreeFromBranch` |
-| `src/__tests__/completions.test.ts` | Tab-completion — branch name filtering, prefix matching, detached HEAD handling |
-| `src/__tests__/commands/wt-create.test.ts` | `/wt-create` — branch validation, new vs existing branch, directory conflicts, untracked file copying, error flows |
-| `src/__tests__/commands/wt-switch.test.ts` | `/wt-switch` — default branch target, missing worktree, branch lookup |
-| `src/__tests__/commands/wt-merge.test.ts` | `/wt-merge` — auto-commit, stash/restore, merge conflicts, confirmation flow |
-| `src/__tests__/commands/wt-cleanup.test.ts` | `/wt-cleanup` — uncommitted changes guard, locked worktree fallback, branch deletion |
+| File                                        | What it tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/__tests__/index.test.ts`               | Extension entry point — command registration, event handler wiring                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `src/__tests__/git.test.ts`                 | `getUntrackedFiles` — error handling, empty output, NUL-separated parsing, empty-string filtering, paths with spaces, correct git arguments                                                                                                                                                                                                                                                                                                                                             |
+| `src/__tests__/helpers.test.ts`             | Git utilities — `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `findWorktreeByBranch`, `getMainWorktree`, `validateBranchName`, `expandTilde`                                                                                                                                                                                                                                                                                                                                  |
+| `src/__tests__/worktree.test.ts`            | Worktree operations — `resolveBaseDir`, `switchCwd`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `ensureMainRepo`, `autoCommitWithAIMessage`, `copyUntrackedFiles`, `analyzeFile` (text/binary detection, empty files, symlinks, error handling), `copyFilesWithOverwrite` (overwrite existing, nested dirs, skip dirs/symlinks, path traversal prevention, copy failure tracking), `formatFileListForConfirm` (text/binary formatting, numbered entries, header) |
+| `src/__tests__/state.test.ts`               | State module — getters/setters, `resetState`, `updateFooterStatus`, `restoreWorktreeFromBranch`                                                                                                                                                                                                                                                                                                                                                                                         |
+| `src/__tests__/completions.test.ts`         | Tab-completion — branch name filtering, prefix matching, detached HEAD handling                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `src/__tests__/commands/wt-create.test.ts`  | `/wt-create` — branch validation, new vs existing branch, directory conflicts, untracked file copying, error flows                                                                                                                                                                                                                                                                                                                                                                      |
+| `src/__tests__/commands/wt-switch.test.ts`  | `/wt-switch` — default branch target, missing worktree, branch lookup                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `src/__tests__/commands/wt-merge.test.ts`   | `/wt-merge` — auto-commit, stash/restore, merge conflicts, confirmation flow, untracked file copy-back (no untracked, user confirms/declines, non-interactive mode, all already in main, copy failure)                                                                                                                                                                                                                                                                                  |
+| `src/__tests__/commands/wt-cleanup.test.ts` | `/wt-cleanup` — uncommitted changes guard, locked worktree fallback, branch deletion                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ---
 
@@ -57,14 +57,14 @@ npx vitest run --coverage
 
 Mock factories and utilities for creating test doubles:
 
-| Export | Purpose |
-| --- | --- |
-| `createMockAPI()` | Returns a mock `ExtensionAPI` with all methods as `vi.fn()`, plus individual fn references for assertions |
-| `createMockContext(overrides?)` | Returns a mock `ExtensionCommandContext` with `hasUI: true`, stubbed `ui`, `sessionManager`, and `cwd` |
-| `captureHandlers(onMock)` | Extracts event handlers registered via `pi.on()` into a keyed object by event name |
-| `captureCommand(registerCommandMock)` | Extracts the name and options from the first `registerCommand` call |
-| `successResult(stdout?, stderr?)` | Creates a successful `ExecResult` (`code: 0`) |
-| `errorResult(stderr?, stdout?)` | Creates a failed `ExecResult` (`code: 1`) |
+| Export                                | Purpose                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `createMockAPI()`                     | Returns a mock `ExtensionAPI` with all methods as `vi.fn()`, plus individual fn references for assertions |
+| `createMockContext(overrides?)`       | Returns a mock `ExtensionCommandContext` with `hasUI: true`, stubbed `ui`, `sessionManager`, and `cwd`    |
+| `captureHandlers(onMock)`             | Extracts event handlers registered via `pi.on()` into a keyed object by event name                        |
+| `captureCommand(registerCommandMock)` | Extracts the name and options from the first `registerCommand` call                                       |
+| `successResult(stdout?, stderr?)`     | Creates a successful `ExecResult` (`code: 0`)                                                             |
+| `errorResult(stderr?, stdout?)`       | Creates a failed `ExecResult` (`code: 1`)                                                                 |
 
 #### Usage Example
 
@@ -105,12 +105,12 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 The project enforces **90% coverage** across all metrics:
 
-| Metric | Threshold |
-| --- | --- |
-| Statements | 90% |
-| Branches | 90% |
-| Functions | 90% |
-| Lines | 90% |
+| Metric     | Threshold |
+| ---------- | --------- |
+| Statements | 90%       |
+| Branches   | 90%       |
+| Functions  | 90%       |
+| Lines      | 90%       |
 
 **Coverage scope** — what's measured:
 
@@ -164,6 +164,9 @@ vi.mock("../worktree.js", () => ({
   hasUncommittedChanges: vi.fn(),
   autoCommitWithAIMessage: vi.fn(),
   copyUntrackedFiles: vi.fn(),
+  analyzeFile: vi.fn(() => ({ isBinary: false, lines: 10 })),
+  copyFilesWithOverwrite: vi.fn(() => []),
+  formatFileListForConfirm: vi.fn(() => "mock list"),
 }));
 
 vi.mock("../validation.js", () => ({

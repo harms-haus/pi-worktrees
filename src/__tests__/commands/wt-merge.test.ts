@@ -6,6 +6,7 @@ vi.mock("../../git.js", () => ({
   getWorktreeList: vi.fn(),
   findWorktreeByBranch: vi.fn(),
   getMainWorktree: vi.fn(),
+  getUntrackedFiles: vi.fn(() => Promise.resolve([])),
 }));
 
 // ── Mock worktree module ──────────────────────────────────────────
@@ -14,6 +15,14 @@ vi.mock("../../worktree.js", () => ({
   ensureMainRepo: vi.fn(() => Promise.resolve(true)),
   hasUncommittedChanges: vi.fn(),
   autoCommitWithAIMessage: vi.fn(),
+  analyzeFile: vi.fn(() => ({ isBinary: false, lines: 10 })),
+  copyFilesWithOverwrite: vi.fn(() => []),
+  formatFileListForConfirm: vi.fn(() => "mock list"),
+}));
+
+// ── Mock node:fs for existsSync ──────────────────────────────────
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(() => false), // default: files not in main
 }));
 
 // ── Mock validation module ───────────────────────────────────────
@@ -31,14 +40,24 @@ vi.mock("../../state.js", () => ({
 }));
 
 // ── Imports (after mocks are registered) ─────────────────────────────
-import { gitExec, getWorktreeList, findWorktreeByBranch, getMainWorktree } from "../../git.js";
+import {
+  gitExec,
+  getWorktreeList,
+  findWorktreeByBranch,
+  getMainWorktree,
+  getUntrackedFiles,
+} from "../../git.js";
 import {
   switchCwd,
   ensureMainRepo,
   hasUncommittedChanges,
   autoCommitWithAIMessage,
+  analyzeFile,
+  copyFilesWithOverwrite,
+  formatFileListForConfirm,
 } from "../../worktree.js";
 import { validateBranchName } from "../../validation.js";
+import { existsSync } from "node:fs";
 import {
   getMainRepoPath,
   getCurrentBranch,
@@ -538,5 +557,228 @@ describe("handleWtMerge", () => {
     expect(ctx.ui.notify).toHaveBeenCalledWith("Branch name cannot be 'HEAD'", "error");
     expect(getWorktreeList).not.toHaveBeenCalled();
     expect(gitExec).not.toHaveBeenCalled();
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // Untracked file copy-back tests
+  // ══════════════════════════════════════════════════════════════════
+
+  // ── U1. No untracked files → no confirm dialog, no copy ──────────
+  it("no untracked files → no confirm dialog for untracked, no copy", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    vi.mocked(getWorktreeList).mockResolvedValueOnce(worktrees);
+    vi.mocked(findWorktreeByBranch).mockReturnValueOnce(featureWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // worktree clean
+    vi.mocked(getMainWorktree).mockReturnValueOnce(mainWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // main clean
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(successResult()) // checkout main
+      .mockResolvedValueOnce(successResult()) // merge
+      .mockResolvedValueOnce(successResult()) // worktree remove -f
+      .mockResolvedValueOnce(successResult()); // worktree prune
+
+    await handleWtMerge("feature", ctx, pi);
+
+    // copyFilesWithOverwrite NOT called (default getUntrackedFiles returns [])
+    expect(copyFilesWithOverwrite).not.toHaveBeenCalled();
+
+    // Merge still completes normally
+    expect(gitExec).toHaveBeenCalledWith(pi, ["checkout", MAIN_BRANCH], MAIN_REPO);
+    expect(gitExec).toHaveBeenCalledWith(pi, ["merge", FEATURE_BRANCH], MAIN_REPO);
+    expect(gitExec).toHaveBeenCalledWith(pi, ["worktree", "remove", "-f", FEATURE_PATH], MAIN_REPO);
+  });
+
+  // ── U2. Untracked files, user confirms → files copied after merge, before remove ──
+  it("untracked files confirmed → files copied after merge, before worktree remove", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    vi.mocked(getUntrackedFiles).mockResolvedValueOnce(["new-file.ts"]);
+    vi.mocked(existsSync).mockReturnValueOnce(false); // not in main
+    vi.mocked(formatFileListForConfirm).mockReturnValueOnce("mock list");
+    // confirm: first call = merge, second call = untracked
+    vi.mocked(ctx.ui.confirm)
+      .mockResolvedValueOnce(true) // merge confirm
+      .mockResolvedValueOnce(true); // untracked confirm
+
+    vi.mocked(getWorktreeList).mockResolvedValueOnce(worktrees);
+    vi.mocked(findWorktreeByBranch).mockReturnValueOnce(featureWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // worktree clean
+    vi.mocked(getMainWorktree).mockReturnValueOnce(mainWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // main clean
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(successResult()) // checkout main
+      .mockResolvedValueOnce(successResult()) // merge
+      .mockResolvedValueOnce(successResult()) // worktree remove -f
+      .mockResolvedValueOnce(successResult()); // worktree prune
+
+    await handleWtMerge("feature", ctx, pi);
+
+    // Untracked files detection called
+    expect(getUntrackedFiles).toHaveBeenCalledWith(pi, FEATURE_PATH);
+    expect(analyzeFile).toHaveBeenCalled();
+
+    // Confirm dialog shown for untracked
+    expect(ctx.ui.confirm).toHaveBeenCalledWith("Copy untracked files to main?", "mock list");
+
+    // copyFilesWithOverwrite called with correct args
+    expect(copyFilesWithOverwrite).toHaveBeenCalledWith(["new-file.ts"], FEATURE_PATH, MAIN_REPO);
+
+    // Verify merge and remove still happen
+    expect(gitExec).toHaveBeenCalledWith(pi, ["checkout", MAIN_BRANCH], MAIN_REPO);
+    expect(gitExec).toHaveBeenCalledWith(pi, ["merge", FEATURE_BRANCH], MAIN_REPO);
+    expect(gitExec).toHaveBeenCalledWith(pi, ["worktree", "remove", "-f", FEATURE_PATH], MAIN_REPO);
+  });
+
+  // ── U3. Untracked files, user declines → no copy, merge proceeds ──
+  it("untracked files declined → no copy, merge still proceeds", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    vi.mocked(getUntrackedFiles).mockResolvedValueOnce(["new-file.ts"]);
+    vi.mocked(existsSync).mockReturnValueOnce(false); // not in main
+    vi.mocked(formatFileListForConfirm).mockReturnValueOnce("mock list");
+    // confirm: first = merge (yes), second = untracked (no)
+    vi.mocked(ctx.ui.confirm)
+      .mockResolvedValueOnce(true) // merge confirm
+      .mockResolvedValueOnce(false); // untracked confirm
+
+    vi.mocked(getWorktreeList).mockResolvedValueOnce(worktrees);
+    vi.mocked(findWorktreeByBranch).mockReturnValueOnce(featureWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // worktree clean
+    vi.mocked(getMainWorktree).mockReturnValueOnce(mainWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // main clean
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(successResult()) // checkout main
+      .mockResolvedValueOnce(successResult()) // merge
+      .mockResolvedValueOnce(successResult()) // worktree remove -f
+      .mockResolvedValueOnce(successResult()); // worktree prune
+
+    await handleWtMerge("feature", ctx, pi);
+
+    // Skipping notification
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Skipping untracked file copy.", "info");
+
+    // copyFilesWithOverwrite NOT called
+    expect(copyFilesWithOverwrite).not.toHaveBeenCalled();
+
+    // Merge still completes
+    expect(gitExec).toHaveBeenCalledWith(pi, ["checkout", MAIN_BRANCH], MAIN_REPO);
+    expect(gitExec).toHaveBeenCalledWith(pi, ["merge", FEATURE_BRANCH], MAIN_REPO);
+    expect(gitExec).toHaveBeenCalledWith(pi, ["worktree", "remove", "-f", FEATURE_PATH], MAIN_REPO);
+    expect(gitExec).toHaveBeenCalledWith(pi, ["worktree", "prune"], MAIN_REPO);
+  });
+
+  // ── U4. Non-interactive mode → auto-copies without confirm ────────
+  it("non-interactive mode → auto-copies untracked without confirm dialog", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext({ hasUI: false });
+
+    vi.mocked(getUntrackedFiles).mockResolvedValueOnce(["auto.txt"]);
+    vi.mocked(existsSync).mockReturnValueOnce(false); // not in main
+
+    vi.mocked(getWorktreeList).mockResolvedValueOnce(worktrees);
+    vi.mocked(findWorktreeByBranch).mockReturnValueOnce(featureWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // worktree clean
+    vi.mocked(getMainWorktree).mockReturnValueOnce(mainWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // main clean
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(successResult()) // checkout main
+      .mockResolvedValueOnce(successResult()) // merge
+      .mockResolvedValueOnce(successResult()) // worktree remove -f
+      .mockResolvedValueOnce(successResult()); // worktree prune
+
+    await handleWtMerge("feature", ctx, pi);
+
+    // No confirm dialog for untracked (hasUI is false)
+    expect(ctx.ui.confirm).not.toHaveBeenCalledWith(
+      "Copy untracked files to main?",
+      expect.anything(),
+    );
+
+    // Files ARE copied
+    expect(copyFilesWithOverwrite).toHaveBeenCalledWith(["auto.txt"], FEATURE_PATH, MAIN_REPO);
+
+    // Merge completes
+    expect(gitExec).toHaveBeenCalledWith(pi, ["merge", FEATURE_BRANCH], MAIN_REPO);
+  });
+
+  // ── U5. All untracked files already in main → no confirm, no copy ──
+  it("all untracked files already exist in main → no confirm, no copy", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    vi.mocked(getUntrackedFiles).mockResolvedValueOnce(["existing.txt"]);
+    vi.mocked(existsSync).mockReturnValueOnce(true); // file already in main
+
+    vi.mocked(getWorktreeList).mockResolvedValueOnce(worktrees);
+    vi.mocked(findWorktreeByBranch).mockReturnValueOnce(featureWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // worktree clean
+    vi.mocked(getMainWorktree).mockReturnValueOnce(mainWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // main clean
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(successResult()) // checkout main
+      .mockResolvedValueOnce(successResult()) // merge
+      .mockResolvedValueOnce(successResult()) // worktree remove -f
+      .mockResolvedValueOnce(successResult()); // worktree prune
+
+    await handleWtMerge("feature", ctx, pi);
+
+    // No untracked confirm dialog
+    expect(ctx.ui.confirm).not.toHaveBeenCalledWith(
+      "Copy untracked files to main?",
+      expect.anything(),
+    );
+
+    // copyFilesWithOverwrite NOT called
+    expect(copyFilesWithOverwrite).not.toHaveBeenCalled();
+
+    // Merge completes normally
+    expect(gitExec).toHaveBeenCalledWith(pi, ["merge", FEATURE_BRANCH], MAIN_REPO);
+  });
+
+  // ── U6. Copy failure → warning notification, merge still completes ──
+  it("copy failure → warning notification, merge still completes", async () => {
+    const pi = createMockAPI().api;
+    const ctx = createMockContext();
+
+    vi.mocked(getUntrackedFiles).mockResolvedValueOnce(["file.txt"]);
+    vi.mocked(existsSync).mockReturnValueOnce(false); // not in main
+    vi.mocked(formatFileListForConfirm).mockReturnValueOnce("mock list");
+    vi.mocked(ctx.ui.confirm)
+      .mockResolvedValueOnce(true) // merge confirm
+      .mockResolvedValueOnce(true); // untracked confirm
+    vi.mocked(copyFilesWithOverwrite).mockReturnValueOnce(["file.txt"]); // copy fails
+
+    vi.mocked(getWorktreeList).mockResolvedValueOnce(worktrees);
+    vi.mocked(findWorktreeByBranch).mockReturnValueOnce(featureWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // worktree clean
+    vi.mocked(getMainWorktree).mockReturnValueOnce(mainWorktree);
+    vi.mocked(hasUncommittedChanges).mockResolvedValueOnce(false); // main clean
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(successResult()) // checkout main
+      .mockResolvedValueOnce(successResult()) // merge
+      .mockResolvedValueOnce(successResult()) // worktree remove -f
+      .mockResolvedValueOnce(successResult()); // worktree prune
+
+    await handleWtMerge("feature", ctx, pi);
+
+    // Warning about copy failure
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining("failed to copy"),
+      "warning",
+    );
+
+    // Merge still completes (worktree removed, pruned)
+    expect(gitExec).toHaveBeenCalledWith(pi, ["worktree", "remove", "-f", FEATURE_PATH], MAIN_REPO);
+    expect(gitExec).toHaveBeenCalledWith(pi, ["worktree", "prune"], MAIN_REPO);
+
+    // Final success notification still sent
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Merged '" + FEATURE_BRANCH + "' into " + MAIN_BRANCH + " and removed worktree",
+      "info",
+    );
   });
 });

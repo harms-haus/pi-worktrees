@@ -23,19 +23,19 @@ The extension has no HTTP server, no database, and no background processes. It i
 
 ## Module Map
 
-| File                      | Responsibility                                                                                           | Key Exports                                                                                                                                                    | Internal Dependencies                                       |
-| ------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `src/index.ts`            | Entry point; registers 4 commands + 3 event handlers                                                     | `default` (extension function)                                                                                                                                 | `state.ts`, `commands/*`, `completions.ts`, `worktree.ts`   |
-| `src/types.ts`            | Type definitions                                                                                         | `WorktreeInfo`, `WORKTREE_CHANGE_TYPE`, `WorktreeChangeData`                                                                                                   | —                                                           |
-| `src/state.ts`            | Module-level state variables, accessors, restoration from session branch, footer status updates          | `getMainRepoPath`, `setMainRepoPath`, `getCurrentWorktreePath`, `setCurrentWorktreePath`, `getCurrentBranch`, `setCurrentBranch`, `getDefaultBranch`, `setDefaultBranch`, `resetState`, `updateFooterStatus`, `restoreWorktreeFromBranch` | `types.ts` |
-| `src/git.ts`              | Git execution wrapper, worktree porcelain parsing, worktree queries                                      | `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `findWorktreeByBranch`, `getMainWorktree`, `getUntrackedFiles`                                        | `state.ts`, `types.ts`                                      |
-| `src/worktree.ts`         | Worktree operations: base directory resolution, CWD switching, repo detection, dirty check, auto-commit, untracked file copying | `resolveBaseDir`, `switchCwd`, `ensureMainRepo`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `autoCommitWithAIMessage`, `copyUntrackedFiles` | `git.ts`, `state.ts`, `types.ts`                            |
-| `src/validation.ts`       | Input validation for branch names and tilde expansion                                                    | `validateBranchName`, `expandTilde`                                                                                                                            | —                                                           |
-| `src/completions.ts`      | Tab-completion for branch names across all worktree commands                                             | `getBranchCompletions`                                                                                                                                         | `git.ts`, `state.ts`                                        |
-| `src/commands/wt-create.ts` | `/wt-create` handler                                                                                   | `handleWtCreate`                                                                                                                                               | `git.ts`, `worktree.ts`, `validation.ts`, `state.ts`        |
-| `src/commands/wt-switch.ts` | `/wt-switch` handler                                                                                   | `handleWtSwitch`                                                                                                                                               | `git.ts`, `worktree.ts`, `state.ts`                         |
-| `src/commands/wt-merge.ts`  | `/wt-merge` handler                                                                                    | `handleWtMerge`                                                                                                                                                | `git.ts`, `worktree.ts`, `validation.ts`, `state.ts`        |
-| `src/commands/wt-cleanup.ts` | `/wt-cleanup` handler                                                                                 | `handleWtCleanup`                                                                                                                                              | `git.ts`, `worktree.ts`, `validation.ts`, `state.ts`        |
+| File                         | Responsibility                                                                                                                  | Key Exports                                                                                                                                                                                                                               | Internal Dependencies                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `src/index.ts`               | Entry point; registers 4 commands + 3 event handlers                                                                            | `default` (extension function)                                                                                                                                                                                                            | `state.ts`, `commands/*`, `completions.ts`, `worktree.ts`        |
+| `src/types.ts`               | Type definitions                                                                                                                | `WorktreeInfo`, `WORKTREE_CHANGE_TYPE`, `WorktreeChangeData`, `UntrackedFileInfo`                                                                                                                                                         | —                                                                |
+| `src/state.ts`               | Module-level state variables, accessors, restoration from session branch, footer status updates                                 | `getMainRepoPath`, `setMainRepoPath`, `getCurrentWorktreePath`, `setCurrentWorktreePath`, `getCurrentBranch`, `setCurrentBranch`, `getDefaultBranch`, `setDefaultBranch`, `resetState`, `updateFooterStatus`, `restoreWorktreeFromBranch` | `types.ts`                                                       |
+| `src/git.ts`                 | Git execution wrapper, worktree porcelain parsing, worktree queries                                                             | `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `findWorktreeByBranch`, `getMainWorktree`, `getUntrackedFiles`                                                                                                                    | `state.ts`, `types.ts`                                           |
+| `src/worktree.ts`            | Worktree operations: base directory resolution, CWD switching, repo detection, dirty check, auto-commit, untracked file copying | `resolveBaseDir`, `switchCwd`, `ensureMainRepo`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `autoCommitWithAIMessage`, `copyUntrackedFiles`, `analyzeFile`, `copyFilesWithOverwrite`, `formatFileListForConfirm`   | `git.ts`, `state.ts`, `types.ts`                                 |
+| `src/validation.ts`          | Input validation for branch names and tilde expansion                                                                           | `validateBranchName`, `expandTilde`                                                                                                                                                                                                       | —                                                                |
+| `src/completions.ts`         | Tab-completion for branch names across all worktree commands                                                                    | `getBranchCompletions`                                                                                                                                                                                                                    | `git.ts`, `state.ts`                                             |
+| `src/commands/wt-create.ts`  | `/wt-create` handler                                                                                                            | `handleWtCreate`                                                                                                                                                                                                                          | `git.ts`, `worktree.ts`, `validation.ts`, `state.ts`             |
+| `src/commands/wt-switch.ts`  | `/wt-switch` handler                                                                                                            | `handleWtSwitch`                                                                                                                                                                                                                          | `git.ts`, `worktree.ts`, `state.ts`                              |
+| `src/commands/wt-merge.ts`   | `/wt-merge` handler                                                                                                             | `handleWtMerge`                                                                                                                                                                                                                           | `git.ts`, `worktree.ts`, `validation.ts`, `state.ts`, `types.ts` |
+| `src/commands/wt-cleanup.ts` | `/wt-cleanup` handler                                                                                                           | `handleWtCleanup`                                                                                                                                                                                                                         | `git.ts`, `worktree.ts`, `validation.ts`, `state.ts`             |
 
 ### Dependency Graph
 
@@ -44,7 +44,7 @@ index.ts
 ├── commands/
 │   ├── wt-create.ts ──── git.ts, worktree.ts, validation.ts, state.ts
 │   ├── wt-switch.ts ──── git.ts, worktree.ts, state.ts
-│   ├── wt-merge.ts  ──── git.ts, worktree.ts, validation.ts, state.ts
+│   ├── wt-merge.ts  ──── git.ts, worktree.ts, validation.ts, state.ts, types.ts
 │   └── wt-cleanup.ts─── git.ts, worktree.ts, validation.ts, state.ts
 ├── completions.ts ─────── git.ts, state.ts
 ├── state.ts ───────────── types.ts
@@ -104,6 +104,12 @@ User
 │  3. detectMainRepo(pi, ctx.cwd)                                     │
 │  4. getWorktreeList(pi) → findWorktreeByBranch(worktrees, target)   │
 │  5. ctx.ui.confirm("Merge and remove worktree?")                    │
+│  5.5. detectAndConfirmUntracked(pi, ctx, wt.path, mainRepoPath)     │
+│     ├── getUntrackedFiles(pi, wt.path)   ← git.ts                  │
+│     ├── filter: files not present in main (existsSync)              │
+│     ├── analyzeFile(path) per file       ← worktree.ts              │
+│     ├── formatFileListForConfirm(files)  ← worktree.ts              │
+│     └── ctx.ui.confirm("Copy untracked files to main?")             │
 │  6. hasUncommittedChanges(pi, wt.path)                              │
 │     └── if dirty: autoCommitWithAIMessage(pi, wt.path)              │
 │         ├── gitExec(["add", "-A"])                                  │
@@ -115,6 +121,7 @@ User
 │     ├── gitExec(["checkout", mainBranch])                           │
 │     ├── gitExec(["merge", targetBranch])                            │
 │     └── if didStash: gitExec(["stash", "pop"])                      │
+│  8.5. copyFilesWithOverwrite(files, wt.path, mainRepoPath)← worktree.ts│
 │  9. gitExec(["worktree", "remove", "-f", wt.path])                  │
 │ 10. gitExec(["worktree", "prune"])                                  │
 │ 11. switchCwd(pi, ctx, mainRepoPath)                                │
@@ -157,15 +164,15 @@ state.ts
 
 ### Where state is mutated
 
-| Site                          | How                                                       | Effect                                                   |
-| ----------------------------- | --------------------------------------------------------- | -------------------------------------------------------- |
-| `session_start` handler       | `setMainRepoPath()`, `setDefaultBranch()`, `restoreWorktreeFromBranch()` | Detects repo, restores persisted worktree state |
-| `session_tree` handler        | `restoreWorktreeFromBranch()`                             | Restores state when switching session branches            |
-| `session_shutdown` handler    | `resetState()`                                            | Clears all state on session end                           |
-| `/wt-create` command          | `setMainRepoPath()`, `setCurrentBranch()`, `switchCwd()`  | Creates worktree and switches to it                       |
-| `/wt-switch` command          | `setMainRepoPath()`, `setCurrentBranch()`, `switchCwd()`  | Switches to existing worktree                             |
-| `/wt-merge` command           | `setMainRepoPath()`, `setCurrentBranch()`, `switchCwd()`  | Merges, removes worktree, switches to default             |
-| `/wt-cleanup` command         | `setMainRepoPath()`, `setCurrentBranch()`, `switchCwd()`  | Removes worktree, optionally switches to default          |
+| Site                       | How                                                                      | Effect                                           |
+| -------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------ |
+| `session_start` handler    | `setMainRepoPath()`, `setDefaultBranch()`, `restoreWorktreeFromBranch()` | Detects repo, restores persisted worktree state  |
+| `session_tree` handler     | `restoreWorktreeFromBranch()`                                            | Restores state when switching session branches   |
+| `session_shutdown` handler | `resetState()`                                                           | Clears all state on session end                  |
+| `/wt-create` command       | `setMainRepoPath()`, `setCurrentBranch()`, `switchCwd()`                 | Creates worktree and switches to it              |
+| `/wt-switch` command       | `setMainRepoPath()`, `setCurrentBranch()`, `switchCwd()`                 | Switches to existing worktree                    |
+| `/wt-merge` command        | `setMainRepoPath()`, `setCurrentBranch()`, `switchCwd()`                 | Merges, removes worktree, switches to default    |
+| `/wt-cleanup` command      | `setMainRepoPath()`, `setCurrentBranch()`, `switchCwd()`                 | Removes worktree, optionally switches to default |
 
 ---
 
@@ -173,20 +180,20 @@ state.ts
 
 ### Agent Lifecycle Events
 
-| Event              | Handler                    | Purpose                                                                                      | Returns |
-| ------------------ | -------------------------- | -------------------------------------------------------------------------------------------- | ------- |
-| `session_start`    | Inline in `index.ts`       | Detect main repo from CWD, detect default branch, restore worktree state, update footer      | `void`  |
-| `session_tree`     | Inline in `index.ts`       | Restore worktree state from session branch, update footer                                    | `void`  |
-| `session_shutdown` | Inline in `index.ts`       | Reset all module-level state variables to defaults                                           | `void`  |
+| Event              | Handler              | Purpose                                                                                 | Returns |
+| ------------------ | -------------------- | --------------------------------------------------------------------------------------- | ------- |
+| `session_start`    | Inline in `index.ts` | Detect main repo from CWD, detect default branch, restore worktree state, update footer | `void`  |
+| `session_tree`     | Inline in `index.ts` | Restore worktree state from session branch, update footer                               | `void`  |
+| `session_shutdown` | Inline in `index.ts` | Reset all module-level state variables to defaults                                      | `void`  |
 
 ### Command Registrations
 
-| Command        | Module                        | Description                                                                                                     |
-| -------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `/wt-create`   | `commands/wt-create.ts`       | Create a new worktree (and branch if needed), switch to it. Tab-completes branch names.                         |
-| `/wt-switch`   | `commands/wt-switch.ts`       | Switch to an existing worktree or back to the default branch. Tab-completes branch names.                       |
-| `/wt-merge`    | `commands/wt-merge.ts`        | Merge a worktree's branch into the default branch, auto-commit changes, remove worktree. Tab-completes.         |
-| `/wt-cleanup`  | `commands/wt-cleanup.ts`      | Remove a worktree (with confirmation), optionally delete branch. Tab-completes branch names.                    |
+| Command       | Module                   | Description                                                                                             |
+| ------------- | ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `/wt-create`  | `commands/wt-create.ts`  | Create a new worktree (and branch if needed), switch to it. Tab-completes branch names.                 |
+| `/wt-switch`  | `commands/wt-switch.ts`  | Switch to an existing worktree or back to the default branch. Tab-completes branch names.               |
+| `/wt-merge`   | `commands/wt-merge.ts`   | Merge a worktree's branch into the default branch, auto-commit changes, remove worktree. Tab-completes. |
+| `/wt-cleanup` | `commands/wt-cleanup.ts` | Remove a worktree (with confirmation), optionally delete branch. Tab-completes branch names.            |
 
 ---
 
@@ -200,23 +207,23 @@ All git commands are executed through the `gitExec` wrapper in `git.ts`, which c
 
 ### Key git commands used
 
-| Purpose                       | Git command                                                       | Module            |
-| ----------------------------- | ----------------------------------------------------------------- | ----------------- |
-| List worktrees                | `git worktree list --porcelain`                                   | `git.ts`          |
-| Create worktree               | `git worktree add [-b <branch>] <path> [<branch>]`                | `wt-create.ts`    |
-| Remove worktree               | `git worktree remove -f <path>`                                   | `wt-merge.ts`, `wt-cleanup.ts` |
-| Prune stale data              | `git worktree prune`                                              | `wt-merge.ts`, `wt-cleanup.ts` |
-| Check branch exists           | `git rev-parse --verify <branch>`                                 | `wt-create.ts`    |
-| Check dirty state             | `git status --porcelain`                                          | `worktree.ts`     |
-| Detect default branch         | `git symbolic-ref refs/remotes/origin/HEAD`                       | `worktree.ts`     |
-| Stage changes                 | `git add -A`                                                      | `worktree.ts`     |
-| Get staged diff               | `git diff --cached`                                               | `worktree.ts`     |
-| Commit                        | `git commit -m <message>`                                         | `worktree.ts`     |
-| Checkout branch               | `git checkout <branch>`                                           | `wt-merge.ts`     |
-| Merge branch                  | `git merge <branch>`                                              | `wt-merge.ts`     |
-| Stash / pop                   | `git stash` / `git stash pop`                                     | `wt-merge.ts`     |
-| Delete branch                 | `git branch -d <branch>`                                          | `wt-cleanup.ts`   |
-| List untracked files           | `git ls-files -z --others --exclude-standard`                      | `git.ts`          |
+| Purpose               | Git command                                        | Module                                             |
+| --------------------- | -------------------------------------------------- | -------------------------------------------------- |
+| List worktrees        | `git worktree list --porcelain`                    | `git.ts`                                           |
+| Create worktree       | `git worktree add [-b <branch>] <path> [<branch>]` | `wt-create.ts`                                     |
+| Remove worktree       | `git worktree remove -f <path>`                    | `wt-merge.ts`, `wt-cleanup.ts`                     |
+| Prune stale data      | `git worktree prune`                               | `wt-merge.ts`, `wt-cleanup.ts`                     |
+| Check branch exists   | `git rev-parse --verify <branch>`                  | `wt-create.ts`                                     |
+| Check dirty state     | `git status --porcelain`                           | `worktree.ts`                                      |
+| Detect default branch | `git symbolic-ref refs/remotes/origin/HEAD`        | `worktree.ts`                                      |
+| Stage changes         | `git add -A`                                       | `worktree.ts`                                      |
+| Get staged diff       | `git diff --cached`                                | `worktree.ts`                                      |
+| Commit                | `git commit -m <message>`                          | `worktree.ts`                                      |
+| Checkout branch       | `git checkout <branch>`                            | `wt-merge.ts`                                      |
+| Merge branch          | `git merge <branch>`                               | `wt-merge.ts`                                      |
+| Stash / pop           | `git stash` / `git stash pop`                      | `wt-merge.ts`                                      |
+| Delete branch         | `git branch -d <branch>`                           | `wt-cleanup.ts`                                    |
+| List untracked files  | `git ls-files -z --others --exclude-standard`      | `git.ts`, used by `wt-create.ts` and `wt-merge.ts` |
 
 ---
 
@@ -226,18 +233,18 @@ All git commands are executed through the `gitExec` wrapper in `git.ts`, which c
 
 Only `@earendil-works/pi-coding-agent` is a **peer dependency** listed in `package.json`. The remaining packages are used at runtime through the pi agent dependency chain.
 
-| Package                            | Type          | Purpose                                                                                         | Used In                                    |
-| ---------------------------------- | ------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `@earendil-works/pi-coding-agent`  | Peer          | Extension API (`ExtensionAPI`, `ExtensionCommandContext`, `ExecResult`), command registration   | All modules except `types.ts`, `validation.ts` |
+| Package                           | Type | Purpose                                                                                       | Used In                                        |
+| --------------------------------- | ---- | --------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `@earendil-works/pi-coding-agent` | Peer | Extension API (`ExtensionAPI`, `ExtensionCommandContext`, `ExecResult`), command registration | All modules except `types.ts`, `validation.ts` |
 
 ### Standard Library Usage
 
-| Module            | Purpose                                                                                            |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| `node:child_process` | `spawnSync` — synchronous subprocess for AI commit message generation (`pi --print`)             |
-| `node:fs`         | `readFileSync`, `statSync`, `existsSync`, `copyFileSync`, `lstatSync`, `mkdirSync` — reading settings, checking directory existence, copying untracked files |
-| `node:os`         | `homedir` — resolving `~` in paths and locating `~/.pi/agent/settings.json`                       |
-| `node:path`       | `isAbsolute`, `join`, `resolve`, `dirname` — path construction for worktree locations, settings resolution, and file copy dest paths |
+| Module               | Purpose                                                                                                                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node:child_process` | `spawnSync` — synchronous subprocess for AI commit message generation (`pi --print`)                                                                                                                              |
+| `node:fs`            | `readFileSync`, `statSync`, `existsSync`, `copyFileSync`, `lstatSync`, `mkdirSync` — reading settings, checking directory existence, copying untracked files, binary detection and line counting in `analyzeFile` |
+| `node:os`            | `homedir` — resolving `~` in paths and locating `~/.pi/agent/settings.json`                                                                                                                                       |
+| `node:path`          | `isAbsolute`, `join`, `resolve`, `dirname` — path construction for worktree locations, settings resolution, and file copy dest paths                                                                              |
 
 ### Key convention: synchronous settings reads
 

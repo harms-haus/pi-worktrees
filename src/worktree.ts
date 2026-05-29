@@ -12,6 +12,7 @@ import {
   getDefaultBranch,
   setMainRepoPath,
 } from "./state.js";
+import type { UntrackedFileInfo } from "./types.js";
 import { WORKTREE_CHANGE_TYPE } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -229,4 +230,123 @@ export function copyUntrackedFiles(
       // Individual copy failure — silently skip
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// analyzeFile — determine binary status and line count in a single read
+// ---------------------------------------------------------------------------
+
+export function analyzeFile(filePath: string): { isBinary: boolean; lines: number | null } {
+  try {
+    const stat = lstatSync(filePath);
+    if (stat.isSymbolicLink()) return { isBinary: false, lines: 0 };
+  } catch {
+    return { isBinary: false, lines: 0 };
+  }
+
+  let buf: Buffer;
+  try {
+    buf = readFileSync(filePath);
+  } catch {
+    return { isBinary: false, lines: 0 };
+  }
+
+  // Check for binary in first 8KB only
+  const scanLen = Math.min(buf.length, 8192);
+  for (let i = 0; i < scanLen; i++) {
+    if (buf[i] === 0) return { isBinary: true, lines: null };
+  }
+
+  // Count newlines via byte iteration
+  let lines = 0;
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] === 0x0a) lines++;
+  }
+  return { isBinary: false, lines };
+}
+
+// ---------------------------------------------------------------------------
+// copyFilesWithOverwrite — copy files, overwriting existing, return failures
+// ---------------------------------------------------------------------------
+
+export function copyFilesWithOverwrite(
+  files: string[],
+  sourceDir: string,
+  destDir: string,
+): string[] {
+  const failed: string[] = [];
+  const resolvedDestDir = resolve(destDir);
+  const resolvedSrcDir = resolve(sourceDir);
+
+  for (const relPath of files) {
+    try {
+      const srcPath = join(sourceDir, relPath);
+      const destPath = join(destDir, relPath);
+
+      // Prevent destination path traversal
+      const resolvedDest = resolve(destPath);
+      if (!resolvedDest.startsWith(resolvedDestDir + "/") && resolvedDest !== resolvedDestDir) {
+        failed.push(relPath);
+        continue;
+      }
+
+      // Prevent source path traversal
+      const resolvedSrc = resolve(srcPath);
+      if (!resolvedSrc.startsWith(resolvedSrcDir + "/") && resolvedSrc !== resolvedSrcDir) {
+        failed.push(relPath);
+        continue;
+      }
+
+      // Skip directories (submodule filter) and symlinks
+      const stat = lstatSync(srcPath);
+      if (stat.isDirectory()) continue;
+      if (stat.isSymbolicLink()) continue;
+
+      // Skip if destination is a symlink
+      try {
+        const destStat = lstatSync(destPath);
+        if (destStat.isSymbolicLink()) {
+          failed.push(relPath);
+          continue;
+        }
+      } catch {
+        // File doesn't exist yet — safe to create
+      }
+
+      // Create parent directory
+      mkdirSync(dirname(destPath), { recursive: true });
+
+      // Copy file (overwrite if exists)
+      copyFileSync(srcPath, destPath);
+    } catch {
+      failed.push(relPath);
+    }
+  }
+
+  return failed;
+}
+
+// ---------------------------------------------------------------------------
+// formatFileListForConfirm — build human-readable file list for confirm dialog
+// ---------------------------------------------------------------------------
+
+export function formatFileListForConfirm(
+  files: UntrackedFileInfo[],
+  theme: { fg: (color: string, text: string) => string },
+): string {
+  if (files.length === 0) return "";
+
+  const lines: string[] = ["The following untracked files will be copied to main:"];
+
+  files.forEach((file, index) => {
+    const num = index + 1;
+    if (file.isBinary) {
+      lines.push(`  ${num}. ${file.path} (binary)`);
+    } else {
+      const lineInfo = theme.fg("success", `+${String(file.lines)}`);
+      lines.push(`  ${num}. ${file.path} ${lineInfo}`);
+    }
+  });
+
+  return lines.join("\n");
 }

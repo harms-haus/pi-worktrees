@@ -16,11 +16,11 @@ The extension reads settings from `~/.pi/agent/settings.json` at the path `workt
 
 ### `worktrees.baseDir`
 
-| Property    | Value                                 |
-| ----------- | ------------------------------------- |
-| **Type**    | `string`                              |
-| **Default** | `"./.git/worktrees/"`                 |
-| **Required**| No                                    |
+| Property     | Value                 |
+| ------------ | --------------------- |
+| **Type**     | `string`              |
+| **Default**  | `"./.git/worktrees/"` |
+| **Required** | No                    |
 
 **Description:** The filesystem directory where new git worktrees are created. When a user runs `/wt-create feature/login`, the worktree is created at `<baseDir>/<branch-name>/`.
 

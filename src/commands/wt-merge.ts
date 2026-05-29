@@ -1,10 +1,21 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { gitExec, getWorktreeList, findWorktreeByBranch, getMainWorktree } from "../git.js";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import {
+  gitExec,
+  getWorktreeList,
+  findWorktreeByBranch,
+  getMainWorktree,
+  getUntrackedFiles,
+} from "../git.js";
 import {
   switchCwd,
   ensureMainRepo,
   hasUncommittedChanges,
   autoCommitWithAIMessage,
+  analyzeFile,
+  copyFilesWithOverwrite,
+  formatFileListForConfirm,
 } from "../worktree.js";
 import { validateBranchName } from "../validation.js";
 import {
@@ -14,6 +25,7 @@ import {
   updateFooterStatus,
   getDefaultBranch,
 } from "../state.js";
+import type { UntrackedFileInfo } from "../types.js";
 
 function resolveTargetBranch(args: string, ctx: ExtensionCommandContext): string | null {
   const targetArg = args.trim();
@@ -74,6 +86,43 @@ async function checkoutAndMerge(
   return true;
 }
 
+async function detectAndConfirmUntracked(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  worktreePath: string,
+  mainRepoPath: string,
+): Promise<string[]> {
+  // 1. Get untracked files from worktree
+  const untrackedFiles = await getUntrackedFiles(pi, worktreePath);
+  if (untrackedFiles.length === 0) return [];
+
+  // 2. Filter to files NOT present in main
+  const filesNotInMain = untrackedFiles.filter((f) => !existsSync(join(mainRepoPath, f)));
+  if (filesNotInMain.length === 0) return [];
+
+  // 3. Analyze each file (line count, binary status)
+  const fileInfos: UntrackedFileInfo[] = filesNotInMain.map((f) => {
+    const analysis = analyzeFile(join(worktreePath, f));
+    return { path: f, ...analysis };
+  });
+
+  // 4. Show confirmation dialog (if UI available)
+  if (ctx.hasUI) {
+    const message = formatFileListForConfirm(
+      fileInfos,
+      ctx.ui.theme as { fg: (color: string, text: string) => string },
+    );
+    const confirmed = await ctx.ui.confirm("Copy untracked files to main?", message);
+    if (!confirmed) {
+      ctx.ui.notify("Skipping untracked file copy.", "info");
+      return [];
+    }
+  }
+
+  // 5. Return the file paths to copy
+  return filesNotInMain;
+}
+
 export async function handleWtMerge(
   args: string,
   ctx: ExtensionCommandContext,
@@ -122,6 +171,9 @@ export async function handleWtMerge(
     }
   }
 
+  // 5.5. Detect untracked files for copy-back (before auto-commit makes them tracked)
+  const filesToCopy = await detectAndConfirmUntracked(pi, ctx, wt.path, getMainRepoPath());
+
   // 6. Handle uncommitted changes in the worktree
   const dirty = await hasUncommittedChanges(pi, wt.path);
   if (dirty) {
@@ -140,6 +192,17 @@ export async function handleWtMerge(
   // 9. Checkout main and merge
   const ok = await checkoutAndMerge(pi, ctx, mainBranch, targetBranch, didStash);
   if (!ok) return;
+
+  // 9.5. Copy untracked files to main
+  if (filesToCopy.length > 0) {
+    const failed = copyFilesWithOverwrite(filesToCopy, wt.path, getMainRepoPath());
+    if (failed.length > 0) {
+      ctx.ui.notify(
+        `Warning: failed to copy ${failed.length} file(s): ${failed.join(", ")}`,
+        "warning",
+      );
+    }
+  }
 
   // 10. Remove the worktree
   const removeResult = await gitExec(pi, ["worktree", "remove", "-f", wt.path], getMainRepoPath());

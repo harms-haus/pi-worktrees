@@ -51,12 +51,13 @@ Configure the worktree storage directory in `~/.pi/agent/settings.json`:
 
 ## Behavior Notes
 
-- **Confirmation prompts** — Destructive operations (`/wt-merge` and `/wt-cleanup`) require confirmation before proceeding.
+- **Confirmation prompts** — Destructive operations (`/wt-merge` and `/wt-cleanup`) require confirmation before proceeding. `/wt-merge` has a second confirmation dialog for copying untracked files back to the main repo (see below).
 - **Uncommitted changes protection** — `/wt-cleanup` refuses to remove worktrees with uncommitted changes. Use `/wt-merge` instead, or commit/stash your changes first.
 - **Merge conflicts** — If a merge has conflicts, the operation is aborted and the worktree is preserved. You'll get clear instructions for resolving the conflict or canceling the merge.
 - **Branch cleanup** — `/wt-cleanup` attempts to delete the branch after removing the worktree. If the branch wasn't fully merged, you'll be shown the command to force-delete it.
 - **Auto-commit** — When merging a worktree that has uncommitted changes, the extension auto-commits them using an AI-generated message via `pi --print`. If the AI call fails or times out, a fallback message (`chore: auto-commit worktree changes`) is used.
 - **Untracked files are copied to new worktrees** — When creating a worktree with `/wt-create`, any untracked files in your current directory (respecting `.gitignore`) are automatically copied to the new worktree. This includes files not yet added to git, but excludes files matched by `.gitignore` patterns. Directories, symlinks, and files that already exist in the new worktree are skipped. This is a best-effort operation — individual copy failures are silently ignored.
+- **Untracked files are offered for copy-back on merge** — When merging a worktree with `/wt-merge`, untracked files in the worktree that don't exist in the main working directory are detected and presented in a confirmation dialog. The dialog shows file names with color-coded line counts (`+N` for text files) or `(binary)` for binary files. If confirmed, the files are copied to the main repo after the merge completes. Existing files in the main repo are overwritten. Individual copy failures are reported as warnings. Detection happens before auto-commit to capture untracked files before `git add -A` stages them.
 - **Worktree placement** — By default, worktrees are created inside `.git/worktrees/<branch-name>/` within the main repository.
 - **Branch validation** — Branch names are validated before creation. Names cannot be empty, start with `-`, equal `HEAD`, or contain special characters (`..`, spaces, `~`, `^`, `:`, `\`, control characters, or end in `.lock`).
 - **Stash during merge** — If the main worktree has uncommitted changes when a merge is performed, those changes are stashed and automatically restored after the merge completes.

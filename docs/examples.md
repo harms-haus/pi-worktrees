@@ -35,6 +35,12 @@ Create a feature branch, work on it, then merge it back and clean up.
 # Footer returns to normal (no 🌳 indicator)
 ```
 
+> **Note:** If the worktree contained untracked files (e.g. `.env`, local config) that
+> were originally copied in, `/wt-merge` may present a confirmation dialog offering to
+> copy those files back to the default branch's working directory before the worktree is
+> removed. Review the list and accept or decline — files you decline to copy back are
+> deleted along with the worktree.
+
 ---
 
 ## Parallel Features
@@ -179,12 +185,12 @@ The default branch is detected once at session start and cached in module-level 
 
 ## Quick Reference
 
-| Goal | Command |
-|---|---|
-| Create and switch to a new feature | `/wt-create feature-name` |
-| Switch to an existing worktree | `/wt-switch feature-name` |
-| Return to the default branch | `/wt-switch main` |
-| Merge feature and remove worktree | `/wt-merge feature-name` |
-| Merge current worktree (no arg) | `/wt-merge` |
-| Remove a worktree without merging | `/wt-cleanup feature-name` |
-| Remove current worktree (no arg) | `/wt-cleanup` |
+| Goal                               | Command                    |
+| ---------------------------------- | -------------------------- |
+| Create and switch to a new feature | `/wt-create feature-name`  |
+| Switch to an existing worktree     | `/wt-switch feature-name`  |
+| Return to the default branch       | `/wt-switch main`          |
+| Merge feature and remove worktree  | `/wt-merge feature-name`   |
+| Merge current worktree (no arg)    | `/wt-merge`                |
+| Remove a worktree without merging  | `/wt-cleanup feature-name` |
+| Remove current worktree (no arg)   | `/wt-cleanup`              |
