@@ -46,7 +46,7 @@ npx vitest run --coverage
 | `src/__tests__/completions.test.ts`         | Tab-completion — branch name filtering, prefix matching, detached HEAD handling                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `src/__tests__/commands/wt-create.test.ts`  | `/wt-create` — branch validation, new vs existing branch, directory conflicts, untracked file copying, error flows                                                                                                                                                                                                                                                                                                                                                                      |
 | `src/__tests__/commands/wt-switch.test.ts`  | `/wt-switch` — default branch target, missing worktree, branch lookup                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `src/__tests__/commands/wt-merge.test.ts`   | `/wt-merge` — auto-commit, stash/restore, merge conflicts, confirmation flow, untracked file copy-back (no untracked, user confirms/declines, non-interactive mode, all already in main, copy failure)                                                                                                                                                                                                                                                                                  |
+| `src/__tests__/commands/wt-merge.test.ts`   | `/wt-merge` — tracked changes handling (select/input dialogs, AI vs custom commit, cancel scenarios), stash apply/drop, merge conflicts (with file listing), verification (ok/fail/rollback), conditional worktree deletion, untracked file copy-back |
 | `src/__tests__/commands/wt-cleanup.test.ts` | `/wt-cleanup` — uncommitted changes guard, locked worktree fallback, branch deletion                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ---
@@ -59,8 +59,8 @@ Mock factories and utilities for creating test doubles:
 
 | Export                                | Purpose                                                                                                   |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `createMockAPI()`                     | Returns a mock `ExtensionAPI` with all methods as `vi.fn()`, plus individual fn references for assertions |
-| `createMockContext(overrides?)`       | Returns a mock `ExtensionCommandContext` with `hasUI: true`, stubbed `ui`, `sessionManager`, and `cwd`    |
+| `createMockAPI()`                     | Returns a mock `ExtensionAPI` with all methods as `vi.fn()`, plus individual fn references for assertions. Includes `sendMessage` (also aliased as `sendUserMessage` on the api object) |
+| `createMockContext(overrides?)`       | Returns a mock `ExtensionCommandContext` with `hasUI: true`, stubbed `ui` (`notify`, `confirm` → resolves true, `select` → resolves undefined, `input` → resolves undefined, `setStatus`, `theme`), `sessionManager`, and `cwd` |
 | `captureHandlers(onMock)`             | Extracts event handlers registered via `pi.on()` into a keyed object by event name                        |
 | `captureCommand(registerCommandMock)` | Extracts the name and options from the first `registerCommand` call                                       |
 | `successResult(stdout?, stderr?)`     | Creates a successful `ExecResult` (`code: 0`)                                                             |
@@ -161,9 +161,9 @@ vi.mock("../worktree.js", () => ({
   switchCwd: vi.fn(),
   detectMainRepo: vi.fn(),
   ensureMainRepo: vi.fn(),
-  hasUncommittedChanges: vi.fn(),
+  hasTrackedChanges: vi.fn(() => Promise.resolve(false)),
   autoCommitWithAIMessage: vi.fn(),
-  copyUntrackedFiles: vi.fn(),
+  verifyMergeIntegrity: vi.fn(() => Promise.resolve({ ok: true, errors: [] })),
   analyzeFile: vi.fn(() => ({ isBinary: false, lines: 10 })),
   copyFilesWithOverwrite: vi.fn(() => []),
   formatFileListForConfirm: vi.fn(() => "mock list"),

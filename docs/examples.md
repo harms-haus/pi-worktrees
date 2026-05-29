@@ -24,20 +24,26 @@ Create a feature branch, work on it, then merge it back and clean up.
 # 2. Work on the feature — edit files, commit, etc.
 # The agent operates in the worktree directory
 
-# 3. Done with the feature — merge into default branch and remove worktree
+# 3. Done with the feature — merge into default branch
 /wt-merge feature/login
-# ✓ Auto-commits any uncommitted changes
+# ✓ Asks how to commit tracked changes (AI message or custom)
 # ✓ Checks out default branch
 # ✓ Merges feature/login into default branch
-# ✓ Removes the worktree
+# ✓ Verifies merge integrity
+# ✓ Asks whether to delete the worktree
 # ✓ Switches CWD back to the main repo
 
 # Footer returns to normal (no 🌳 indicator)
 ```
 
-> **Note:** If the worktree contained untracked files (e.g. `.env`, local config) that
-> were originally copied in, `/wt-merge` may present a confirmation dialog offering to
-> copy those files back to the default branch's working directory before the worktree is
+> **Note:** If the worktree has tracked (committed) changes, `/wt-merge` prompts you to
+> choose how to commit them — let the agent summarize with an AI-generated message, or
+> provide your own commit message. In non-interactive mode the AI commit is used
+> automatically.
+>
+> If the worktree contained untracked files (e.g. `.env`, local config) that were
+> originally copied in, `/wt-merge` may present a confirmation dialog offering to copy
+> those files back to the default branch's working directory before the worktree is
 > removed. Review the list and accept or decline — files you decline to copy back are
 > deleted along with the worktree.
 
@@ -168,7 +174,8 @@ When your repo uses `master`, `develop`, or another branch as the default, pi-wo
 # Switches back to the detected default branch
 
 /wt-merge feature/api
-# Merges feature/api into develop
+# Asks how to commit tracked changes, merges into develop,
+# verifies integrity, asks whether to delete worktree
 
 /wt-cleanup old-feature
 # Cleans up worktree, stays on develop
@@ -190,7 +197,7 @@ The default branch is detected once at session start and cached in module-level 
 | Create and switch to a new feature | `/wt-create feature-name`  |
 | Switch to an existing worktree     | `/wt-switch feature-name`  |
 | Return to the default branch       | `/wt-switch main`          |
-| Merge feature and remove worktree  | `/wt-merge feature-name`   |
+| Merge feature (with delete prompt) | `/wt-merge feature-name`   |
 | Merge current worktree (no arg)    | `/wt-merge`                |
 | Remove a worktree without merging  | `/wt-cleanup feature-name` |
 | Remove current worktree (no arg)   | `/wt-cleanup`              |

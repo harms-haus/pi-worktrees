@@ -100,7 +100,7 @@ When adding new functionality, place code in the module that owns that domain:
 | Type definitions        | `types.ts`       | `WorktreeInfo`, `WorktreeChangeData`, `UntrackedFileInfo`                                                                                           |
 | Mutable state           | `state.ts`       | getters, setters, `resetState`, `updateFooterStatus`                                                                                                |
 | Git command execution   | `git.ts`         | `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `getUntrackedFiles`                                                                         |
-| Worktree business logic | `worktree.ts`    | `resolveBaseDir`, `switchCwd`, `autoCommitWithAIMessage`, `copyUntrackedFiles`, `analyzeFile`, `copyFilesWithOverwrite`, `formatFileListForConfirm` |
+| Worktree business logic | `worktree.ts`    | `resolveBaseDir`, `switchCwd`, `autoCommitWithAIMessage`, `hasTrackedChanges`, `verifyMergeIntegrity`, `copyUntrackedFiles`, `analyzeFile`, `copyFilesWithOverwrite`, `formatFileListForConfirm` |
 | Input validation        | `validation.ts`  | `validateBranchName`, `expandTilde`                                                                                                                 |
 | Tab-completion          | `completions.ts` | `getBranchCompletions`                                                                                                                              |
 | Command handlers        | `commands/`      | One file per command (`wt-*.ts`)                                                                                                                    |

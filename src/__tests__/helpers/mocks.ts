@@ -23,6 +23,7 @@ export function createMockAPI() {
     on,
     appendEntry,
     sendMessage,
+    sendUserMessage: sendMessage,
     registerMessageRenderer,
     exec,
   } as unknown as ExtensionAPI;
@@ -50,6 +51,8 @@ export function createMockContext(
     ui: {
       notify: vi.fn(),
       confirm: vi.fn().mockResolvedValue(true),
+      select: vi.fn().mockResolvedValue(undefined),
+      input: vi.fn().mockResolvedValue(undefined),
       setStatus: vi.fn(),
       theme: {
         fg: vi.fn((_color: string, text: string) => text),

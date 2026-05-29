@@ -78,6 +78,20 @@ describe("parseWorktreePorcelain", () => {
     expect(parseWorktreePorcelain("   ")).toEqual([]);
   });
 
+  it("handles branch not starting with refs/heads/ → uses branch as branchName", () => {
+    const output = [
+      "worktree /home/user/project",
+      "HEAD abc123def456",
+      "branch refs/tags/v1.0",
+    ].join("\n");
+
+    const result = parseWorktreePorcelain(output);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.branchName).toBe("refs/tags/v1.0");
+    expect(result[0]!.branch).toBe("refs/tags/v1.0");
+  });
+
   it("handles output with trailing newline", () => {
     const output = [
       "worktree /home/user/project",

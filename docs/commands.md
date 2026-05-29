@@ -108,7 +108,7 @@ Switch to an existing worktree by branch name, or back to the default branch.
 
 ## `/wt-merge`
 
-Merge a worktree's branch into the default branch and remove the worktree. Auto-commits uncommitted changes. Requires confirmation.
+Merge a worktree's branch into the default branch. Auto-commits tracked changes. Optionally copies untracked files back to main and deletes the worktree. Requires confirmation.
 
 **Usage:**
 
@@ -137,35 +137,39 @@ Merge a worktree's branch into the default branch and remove the worktree. Auto-
 
 ### Flow
 
-1. **Resolve target branch** (from args or current branch).
-2. **Validate** branch name and guard against self-merge.
-3. **Detect main repo** if not already known.
-4. **Find the worktree** for the target branch.
-5. **Confirm** the destructive operation via `ctx.ui.confirm()`.
-6. **Detect untracked files** for copy-back (before auto-commit makes them tracked) — `getUntrackedFiles(pi, wt.path)` lists untracked files in the worktree, filters to those not already present in main (via `existsSync`), analyzes each file (`analyzeFile` — binary detection and line counting), then shows a confirmation dialog "Copy untracked files to main?" listing the files with color-coded line counts. If declined, notifies "Skipping untracked file copy." and proceeds without copying.
-7. **Auto-commit** if the worktree has uncommitted changes:
-   - Stages all changes (`git add -A`).
-   - Generates AI commit message via `pi --print`.
-   - Falls back to `"chore: auto-commit worktree changes"` on failure.
-   - Commits with the generated message.
-8. **Stash main worktree** if it has uncommitted changes.
-9. **Checkout default branch** and merge target branch.
-10. **Pop stash** if main was stashed.
-11. **Copy confirmed untracked files** — `copyFilesWithOverwrite(filesToCopy, wt.path, getMainRepoPath())` copies the confirmed files from the worktree to the main repo. Existing files in main are overwritten. Individual copy failures are reported as warnings.
-12. **Remove the worktree** via `git worktree remove -f`.
-13. **Prune** stale worktree metadata.
-14. **Update state**: set `currentBranch` to default, call `switchCwd()`, update footer, notify success.
+1. **Resolve and validate target** (`resolveMergeTarget`) — resolve the target branch from args or current branch, validate the branch name, detect main repo, guard against self-merge, find the worktree, and determine the main branch name.
+2. **Confirm merge** — prompt the user to confirm merging `<branch>` into `<main>`.
+3. **Handle tracked changes** (`handleTrackedChanges`) — check for uncommitted tracked changes via `hasTrackedChanges()` (which uses `git status --porcelain` and filters out `?? ` untracked entries):
+   - **Interactive (UI)**: present a select dialog with two options:
+     - *"Let agent summarize & commit"* — calls `autoCommitWithAIMessage()` which stages tracked changes only (`git add -u`), generates a commit message via `pi --print` (falls back to `"chore: auto-commit worktree changes"`), and commits.
+     - *"Provide commit message"* — prompts for a custom message, then stages (`git add -u`) and commits.
+     - Canceling either dialog halts the merge.
+   - **Non-interactive**: auto-commits tracked changes directly via `autoCommitWithAIMessage()`. If auto-commit fails, the merge is halted.
+4. **Detect untracked files and confirm copy-back** (`detectAndConfirmUntracked`) — list untracked files in the worktree, filter to those not already present in main, analyze each file (binary detection + line count), and show a confirmation dialog. See [Untracked Files](#untracked-files-merge) for details.
+5. **Stash main worktree if dirty** (`stashMainIfDirty`) — if the main worktree has tracked uncommitted changes, run `git stash` and record that a stash was created.
+6. **Save pre-merge HEAD** (`getPreMergeHead`) — capture the current HEAD commit via `git rev-parse HEAD` for potential rollback.
+7. **Checkout main and merge** (`checkoutAndMerge`) — `git checkout <mainBranch>` then `git merge <targetBranch>`:
+   - If checkout fails and a stash exists, reapply the stash (`git stash apply`) to restore the working tree.
+   - If the merge has conflicts, list the conflicted files (via `git diff --name-only --diff-filter=U`), notify the user with instructions to resolve or abort, and halt. The worktree is **not** removed. Any stash is preserved (not applied).
+8. **Verify merge integrity** (`verifyOrFailMerge`) — run `verifyMergeIntegrity()` which checks that (a) the main worktree has no unexpected tracked dirty files, and (b) the worktree branch is an ancestor of main (`merge-base --is-ancestor`). On failure: list errors, roll back via `git reset --hard <preMergeHead>`, preserve the worktree, and halt.
+9. **Restore stash** — if main was stashed, apply it (`git stash apply`). On success, drop the stash (`git stash drop`). On failure, warn with recovery instructions (`git stash list` / `git stash apply`).
+10. **Finalize** (`finalizeMerge`):
+    - Copy confirmed untracked files via `copyFilesWithOverwrite()` (if any were confirmed in step 4).
+    - Ask the user whether to delete the worktree (`"Delete worktree?"`). In non-interactive mode, the worktree is always kept.
+    - If deleted: `git worktree remove -f` + `git worktree prune`.
+    - Update state: set `currentBranch` to main, call `switchCwd()`, update footer, notify success.
 
-### Untracked Files
+### Untracked Files {#untracked-files-merge}
 
 When merging a worktree, untracked files in the worktree that don't exist in the main working directory are detected and offered for copy-back to main.
 
 - **Detection**: `getUntrackedFiles(pi, wt.path)` via `git ls-files -z --others --exclude-standard` — respects `.gitignore`.
 - **Filtering**: only files not already present in main (via `existsSync`) are candidates.
 - **Analysis**: each file is analyzed via `analyzeFile()` — checks for binary content (NUL byte scan of first 8 KB) and counts lines. Binary files show `(binary)`, text files show color-coded line counts (e.g. `+42` in green).
-- **Confirmation**: a dialog lists the candidate files and asks "Copy untracked files to main?". If declined, copy is skipped entirely (info notification).
-- **Copy**: happens after the merge succeeds but before the worktree is removed. `copyFilesWithOverwrite()` copies files, overwriting any existing files in main. Individual copy failures are reported as warnings but don't prevent the merge from completing.
-- **Timing**: detection runs **before** auto-commit so that untracked files are captured before `git add -A` stages them.
+- **Confirmation (interactive)**: a dialog lists the candidate files and asks "Copy untracked files to main?". If declined, copy is skipped entirely (info notification).
+- **Non-interactive**: untracked files are **not** copied (safe default).
+- **Copy**: happens after the merge is verified, before the worktree deletion prompt. `copyFilesWithOverwrite()` copies files, overwriting any existing files in main. Individual copy failures are reported as warnings but don't prevent the merge from completing.
+- **Timing**: detection runs **before** the tracked-changes commit so that untracked files are captured while still untracked.
 
 ### Merge Conflict Handling
 
@@ -173,24 +177,32 @@ If the merge has conflicts:
 
 - The merge is **not** committed.
 - The worktree is **not** removed.
-- A stash (if any) is popped back.
+- Conflicted files are listed by name in the error message.
+- A stash (if any) is **preserved** (not applied). The message instructs the user to run `git stash list` / `git stash apply` to recover.
 - The user is instructed to resolve conflicts or run `git merge --abort`.
 
 ### Error Cases
 
-| Condition                        | Message                                                                           |
-| -------------------------------- | --------------------------------------------------------------------------------- |
-| No args + on default branch      | `"Usage: /wt-merge <branch-name> (currently on <default>, no worktree to merge)"` |
-| Invalid branch name              | Specific validation error                                                         |
-| Not in a git repo                | `"Not inside a git repository"`                                                   |
-| Merging default into itself      | `"Cannot merge the <default> branch into itself"`                                 |
-| No worktree for branch           | `"No worktree found for branch '<name>'"`                                         |
-| User cancels confirmation        | `"Merge cancelled"`                                                               |
-| Checkout fails                   | `"Failed to checkout <branch>: <stderr>"`                                         |
-| Merge conflicts                  | `"Merge has conflicts. Run 'git merge --abort' to cancel..."`                     |
-| Untracked copy — user declines   | `"Skipping untracked file copy."` (info)                                          |
-| Untracked copy — partial failure | `"Warning: failed to copy N file(s): ..."` (warning)                              |
-| Worktree remove fails            | `"Merged but failed to remove worktree: <stderr>"` (warning, not error)           |
+| Condition                                          | Message / Behavior                                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| No args + on default branch                        | `"Usage: /wt-merge <branch-name> (currently on <default>, no worktree to merge)"`                           |
+| Invalid branch name                                | Specific validation error                                                                                  |
+| Not in a git repo                                  | `"Not inside a git repository"`                                                                            |
+| Merging default into itself                        | `"Cannot merge the <default> branch into itself"`                                                          |
+| No worktree for branch                             | `"No worktree found for branch '<name>'"`                                                                  |
+| User cancels merge confirmation                    | `"Merge cancelled"` (info)                                                                                 |
+| Tracked changes — user cancels select dialog       | `"Merge cancelled"` (info)                                                                                 |
+| Tracked changes — user cancels input (empty msg)   | `"Merge cancelled"` (info)                                                                                 |
+| Auto-commit fails (interactive)                    | `"Auto-commit failed: <message>"` (error) — merge halted                                                   |
+| Auto-commit fails (non-interactive)                | `"Auto-commit failed: <message>. Merge halted — uncommitted changes remain in worktree."` (error)         |
+| Checkout fails                                     | `"Failed to checkout <branch>: <stderr>"` (error). Stash reapplied if one was created.                     |
+| Merge conflicts                                    | Lists conflicted files. Instructs `git merge --abort`. Stash preserved.                                    |
+| Merge verification fails                           | Errors listed individually. Main rolled back via `git reset --hard`. Worktree preserved.                   |
+| Stash apply fails                                  | `"Warning: failed to reapply stashed changes…"` — instructions to recover via `git stash list`/`apply`.   |
+| Untracked copy — user declines                     | `"Skipping untracked file copy."` (info)                                                                   |
+| Untracked copy — partial failure                   | `"Warning: failed to copy N file(s): …"` (warning)                                                         |
+| Worktree remove fails                              | `"Merged but failed to remove worktree: <stderr>"` (warning, not error)                                    |
+| User declines worktree deletion                    | Success notification includes `"(worktree kept)"`                                                          |
 
 ---
 

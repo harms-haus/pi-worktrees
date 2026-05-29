@@ -66,6 +66,7 @@ import {
   switchCwd,
   detectMainRepo,
   hasUncommittedChanges,
+  hasTrackedChanges,
   detectDefaultBranch,
   ensureMainRepo,
   autoCommitWithAIMessage,
@@ -73,6 +74,7 @@ import {
   analyzeFile,
   copyFilesWithOverwrite,
   formatFileListForConfirm,
+  verifyMergeIntegrity,
 } from "../worktree.js";
 import { WORKTREE_CHANGE_TYPE } from "../types.js";
 import { createMockAPI, createMockContext } from "./helpers/mocks.js";
@@ -262,6 +264,199 @@ describe("hasUncommittedChanges", () => {
 });
 
 // ============================================================================
+// hasTrackedChanges
+// ============================================================================
+describe("hasTrackedChanges", () => {
+  it("returns true when status has tracked modifications", async () => {
+    const { api } = createMockAPI();
+    vi.mocked(gitExec).mockResolvedValueOnce({
+      stdout: "M file.txt\n",
+      stderr: "",
+      code: 0,
+      killed: false,
+    });
+
+    const result = await hasTrackedChanges(api, "/repo");
+
+    expect(result).toBe(true);
+    expect(gitExec).toHaveBeenCalledWith(api, ["status", "--porcelain"], "/repo");
+  });
+
+  it("returns false when status is empty", async () => {
+    const { api } = createMockAPI();
+    vi.mocked(gitExec).mockResolvedValueOnce({
+      stdout: "",
+      stderr: "",
+      code: 0,
+      killed: false,
+    });
+
+    const result = await hasTrackedChanges(api, "/repo");
+
+    expect(result).toBe(false);
+  });
+
+  it("returns false when status has ONLY untracked files", async () => {
+    const { api } = createMockAPI();
+    vi.mocked(gitExec).mockResolvedValueOnce({
+      stdout: "?? newfile.txt\n",
+      stderr: "",
+      code: 0,
+      killed: false,
+    });
+
+    const result = await hasTrackedChanges(api, "/repo");
+
+    expect(result).toBe(false);
+  });
+
+  it("returns true when status has BOTH tracked and untracked", async () => {
+    const { api } = createMockAPI();
+    vi.mocked(gitExec).mockResolvedValueOnce({
+      stdout: "M tracked.txt\n?? untracked.txt\n",
+      stderr: "",
+      code: 0,
+      killed: false,
+    });
+
+    const result = await hasTrackedChanges(api, "/repo");
+
+    expect(result).toBe(true);
+  });
+
+  it("returns false when gitExec fails", async () => {
+    const { api } = createMockAPI();
+    vi.mocked(gitExec).mockResolvedValueOnce({
+      stdout: "",
+      stderr: "fatal: not a git repository",
+      code: 128,
+      killed: false,
+    });
+
+    const result = await hasTrackedChanges(api, "/repo");
+
+    expect(result).toBe(false);
+  });
+
+  it("returns true for staged changes", async () => {
+    const { api } = createMockAPI();
+    vi.mocked(gitExec).mockResolvedValueOnce({
+      stdout: "A  new.txt\n",
+      stderr: "",
+      code: 0,
+      killed: false,
+    });
+
+    const result = await hasTrackedChanges(api, "/repo");
+
+    expect(result).toBe(true);
+  });
+
+  it("returns true for deleted tracked files", async () => {
+    const { api } = createMockAPI();
+    vi.mocked(gitExec).mockResolvedValueOnce({
+      stdout: "D  old.txt\n",
+      stderr: "",
+      code: 0,
+      killed: false,
+    });
+
+    const result = await hasTrackedChanges(api, "/repo");
+
+    expect(result).toBe(true);
+  });
+});
+
+// ============================================================================
+// verifyMergeIntegrity
+// ============================================================================
+describe("verifyMergeIntegrity", () => {
+  it("returns ok when main is clean and branch is ancestor", async () => {
+    const { api } = createMockAPI();
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // status
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }); // merge-base
+
+    const result = await verifyMergeIntegrity(api, MAIN_REPO, MAIN_BRANCH, FEATURE_BRANCH);
+
+    expect(result).toEqual({ ok: true, errors: [] });
+  });
+
+  it("returns error when main has tracked dirty files", async () => {
+    const { api } = createMockAPI();
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce({
+        stdout: "M file.txt\n",
+        stderr: "",
+        code: 0,
+        killed: false,
+      }) // status dirty
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }); // merge-base ok
+
+    const result = await verifyMergeIntegrity(api, MAIN_REPO, MAIN_BRANCH, FEATURE_BRANCH);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("Main worktree has unexpected tracked dirty files after merge");
+  });
+
+  it("returns error when branch is not ancestor", async () => {
+    const { api } = createMockAPI();
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // status clean
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 1, killed: false }); // merge-base fail
+
+    const result = await verifyMergeIntegrity(api, MAIN_REPO, MAIN_BRANCH, FEATURE_BRANCH);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      "Worktree branch '" + FEATURE_BRANCH + "' is not fully merged into " + MAIN_BRANCH,
+    );
+  });
+
+  it("returns multiple errors when multiple checks fail", async () => {
+    const { api } = createMockAPI();
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce({
+        stdout: "M file.txt\n",
+        stderr: "",
+        code: 0,
+        killed: false,
+      }) // status dirty
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 1, killed: false }); // merge-base fail
+
+    const result = await verifyMergeIntegrity(api, MAIN_REPO, MAIN_BRANCH, FEATURE_BRANCH);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors).toContain("Main worktree has unexpected tracked dirty files after merge");
+    expect(result.errors).toContain(
+      "Worktree branch '" + FEATURE_BRANCH + "' is not fully merged into " + MAIN_BRANCH,
+    );
+  });
+
+  it("ignores untracked files in status check", async () => {
+    const { api } = createMockAPI();
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce({
+        stdout: "?? newfile.txt\n",
+        stderr: "",
+        code: 0,
+        killed: false,
+      }) // status with only untracked
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }); // merge-base ok
+
+    const result = await verifyMergeIntegrity(api, MAIN_REPO, MAIN_BRANCH, FEATURE_BRANCH);
+
+    expect(result).toEqual({ ok: true, errors: [] });
+  });
+});
+
+// ============================================================================
 // detectDefaultBranch
 // ============================================================================
 describe("detectDefaultBranch", () => {
@@ -424,17 +619,17 @@ describe("ensureMainRepo", () => {
 // autoCommitWithAIMessage
 // ============================================================================
 describe("autoCommitWithAIMessage", () => {
-  it("returns EMPTY_DIFF_FALLBACK when nothing staged after add", async () => {
+  it("returns null when nothing staged after add", async () => {
     const { api } = createMockAPI();
 
-    // git add -A succeeds, diff --cached returns empty
+    // git add -u succeeds, diff --cached returns empty
     gitExec
-      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -A
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -u
       .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }); // diff --cached empty
 
     const result = await autoCommitWithAIMessage(api, "/repo");
 
-    expect(result).toBe("chore: save work");
+    expect(result).toBeNull();
     // No commit attempted
     expect(gitExec).toHaveBeenCalledTimes(2);
   });
@@ -446,7 +641,7 @@ describe("autoCommitWithAIMessage", () => {
     const aiMessage = "feat: add new feature";
 
     gitExec
-      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -A
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -u
       .mockResolvedValueOnce({ stdout: diffContent, stderr: "", code: 0, killed: false }) // diff --cached
       .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }); // commit
 
@@ -479,7 +674,7 @@ describe("autoCommitWithAIMessage", () => {
     const diffContent = "diff --git a/file.txt b/file.txt\n+new line";
 
     gitExec
-      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -A
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -u
       .mockResolvedValueOnce({ stdout: diffContent, stderr: "", code: 0, killed: false }) // diff --cached
       .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }); // commit
 
@@ -507,7 +702,7 @@ describe("autoCommitWithAIMessage", () => {
     const diffContent = "diff --git a/file.txt b/file.txt\n+new line";
 
     gitExec
-      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -A
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -u
       .mockResolvedValueOnce({ stdout: diffContent, stderr: "", code: 0, killed: false }) // diff --cached
       .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }); // commit
 
@@ -529,7 +724,7 @@ describe("autoCommitWithAIMessage", () => {
     const diffContent = "diff --git a/file.txt b/file.txt\n+new line";
 
     gitExec
-      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -A
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -u
       .mockResolvedValueOnce({ stdout: diffContent, stderr: "", code: 0, killed: false }) // diff --cached
       .mockResolvedValueOnce({ stdout: "", stderr: "nothing to commit", code: 1, killed: false }); // commit fails
 
@@ -550,7 +745,7 @@ describe("autoCommitWithAIMessage", () => {
     const diffContent = "diff --git a/file.txt b/file.txt\n+new line";
 
     gitExec
-      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -A
+      .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }) // add -u
       .mockResolvedValueOnce({ stdout: diffContent, stderr: "", code: 0, killed: false }) // diff --cached
       .mockResolvedValueOnce({ stdout: "", stderr: "", code: 0, killed: false }); // commit
 

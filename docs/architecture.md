@@ -29,7 +29,7 @@ The extension has no HTTP server, no database, and no background processes. It i
 | `src/types.ts`               | Type definitions                                                                                                                | `WorktreeInfo`, `WORKTREE_CHANGE_TYPE`, `WorktreeChangeData`, `UntrackedFileInfo`                                                                                                                                                         | —                                                                |
 | `src/state.ts`               | Module-level state variables, accessors, restoration from session branch, footer status updates                                 | `getMainRepoPath`, `setMainRepoPath`, `getCurrentWorktreePath`, `setCurrentWorktreePath`, `getCurrentBranch`, `setCurrentBranch`, `getDefaultBranch`, `setDefaultBranch`, `resetState`, `updateFooterStatus`, `restoreWorktreeFromBranch` | `types.ts`                                                       |
 | `src/git.ts`                 | Git execution wrapper, worktree porcelain parsing, worktree queries                                                             | `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `findWorktreeByBranch`, `getMainWorktree`, `getUntrackedFiles`                                                                                                                    | `state.ts`, `types.ts`                                           |
-| `src/worktree.ts`            | Worktree operations: base directory resolution, CWD switching, repo detection, dirty check, auto-commit, untracked file copying | `resolveBaseDir`, `switchCwd`, `ensureMainRepo`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `autoCommitWithAIMessage`, `copyUntrackedFiles`, `analyzeFile`, `copyFilesWithOverwrite`, `formatFileListForConfirm`   | `git.ts`, `state.ts`, `types.ts`                                 |
+| `src/worktree.ts`            | Worktree operations: base directory resolution, CWD switching, repo detection, dirty check, tracked-changes check, auto-commit, merge verification, untracked file copying | `resolveBaseDir`, `switchCwd`, `ensureMainRepo`, `detectMainRepo`, `hasUncommittedChanges`, `hasTrackedChanges`, `detectDefaultBranch`, `autoCommitWithAIMessage`, `verifyMergeIntegrity`, `copyUntrackedFiles`, `analyzeFile`, `copyFilesWithOverwrite`, `formatFileListForConfirm` | `git.ts`, `state.ts`, `types.ts`                                 |
 | `src/validation.ts`          | Input validation for branch names and tilde expansion                                                                           | `validateBranchName`, `expandTilde`                                                                                                                                                                                                       | —                                                                |
 | `src/completions.ts`         | Tab-completion for branch names across all worktree commands                                                                    | `getBranchCompletions`                                                                                                                                                                                                                    | `git.ts`, `state.ts`                                             |
 | `src/commands/wt-create.ts`  | `/wt-create` handler                                                                                                            | `handleWtCreate`                                                                                                                                                                                                                          | `git.ts`, `worktree.ts`, `validation.ts`, `state.ts`             |
@@ -92,43 +92,77 @@ User
 │  8. updateFooterStatus(ctx)                 ← state.ts              │
 │  9. ctx.ui.notify("Created worktree...")    ← TUI                   │
 └──────────────────────────────────────────────────────────────────────┘
+```
 
+```
 User
   │
   ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │  /wt-merge feature/login                                             │
 │                                                                      │
-│  1. resolveTargetBranch(args, ctx)                                  │
-│  2. validateBranchName(targetBranch)                                │
-│  3. detectMainRepo(pi, ctx.cwd)                                     │
-│  4. getWorktreeList(pi) → findWorktreeByBranch(worktrees, target)   │
-│  5. ctx.ui.confirm("Merge and remove worktree?")                    │
-│  5.5. detectAndConfirmUntracked(pi, ctx, wt.path, mainRepoPath)     │
+│  1. resolveMergeTarget(args, ctx, pi)                               │
+│     ├── resolveTargetBranch(args, ctx)                              │
+│     ├── validateBranchName(targetBranch)                            │
+│     ├── ensureMainRepo(pi, ctx)           ← worktree.ts             │
+│     ├── guard: target ≠ default branch                              │
+│     ├── getWorktreeList(pi) → findWorktreeByBranch(worktrees, target)│
+│     └── getMainWorktree(worktrees) → resolve mainBranch             │
+│                                                                      │
+│  2. ctx.ui.confirm("Merge worktree?")     ← aborts if declined     │
+│                                                                      │
+│  3. handleTrackedChanges(pi, ctx, wt.path)                          │
+│     ├── hasTrackedChanges(pi, wt.path)   ← worktree.ts              │
+│     │   └── gitExec(["status", "--porcelain"]) — filter out "?? "  │
+│     └── if dirty + UI: ctx.ui.select →                              │
+│         ├── "Let agent summarize & commit":                         │
+│         │   autoCommitWithAIMessage(pi, wt.path) ← worktree.ts     │
+│         │   ├── gitExec(["add", "-u"])                              │
+│         │   ├── gitExec(["diff", "--cached"])                       │
+│         │   ├── spawnSync("pi", ["--print"])  ← AI commit message  │
+│         │   └── gitExec(["commit", "-m", msg])                      │
+│         └── "Provide commit message":                               │
+│             ctx.ui.input → gitExec(["add", "-u"]) → commit          │
+│     └── if dirty + non-interactive: autoCommitWithAIMessage()        │
+│                                                                      │
+│  4. detectAndConfirmUntracked(pi, ctx, wt.path, mainRepoPath)       │
 │     ├── getUntrackedFiles(pi, wt.path)   ← git.ts                  │
 │     ├── filter: files not present in main (existsSync)              │
 │     ├── analyzeFile(path) per file       ← worktree.ts              │
 │     ├── formatFileListForConfirm(files)  ← worktree.ts              │
 │     └── ctx.ui.confirm("Copy untracked files to main?")             │
-│  6. hasUncommittedChanges(pi, wt.path)                              │
-│     └── if dirty: autoCommitWithAIMessage(pi, wt.path)              │
-│         ├── gitExec(["add", "-A"])                                  │
-│         ├── gitExec(["diff", "--cached"])                           │
-│         ├── spawnSync("pi", ["--print"])  ← AI commit message      │
-│         └── gitExec(["commit", "-m", msg])                          │
-│  7. stashMainIfDirty(pi, ctx)                                       │
-│  8. checkoutAndMerge(pi, ctx, mainBranch, targetBranch, didStash)   │
+│                                                                      │
+│  5. stashMainIfDirty(pi, ctx)             ← checks tracked changes │
+│     └── hasTrackedChanges(pi, mainRepoPath) → gitExec(["stash"])    │
+│                                                                      │
+│  6. getPreMergeHead(pi)                   ← gitExec(["rev-parse", "HEAD"])│
+│                                                                      │
+│  7. checkoutAndMerge(pi, ctx, mainBranch, targetBranch, didStash)   │
 │     ├── gitExec(["checkout", mainBranch])                           │
 │     ├── gitExec(["merge", targetBranch])                            │
-│     └── if didStash: gitExec(["stash", "pop"])                      │
-│  8.5. copyFilesWithOverwrite(files, wt.path, mainRepoPath)← worktree.ts│
-│  9. gitExec(["worktree", "remove", "-f", wt.path])                  │
-│ 10. gitExec(["worktree", "prune"])                                  │
-│ 11. switchCwd(pi, ctx, mainRepoPath)                                │
-│ 12. updateFooterStatus(ctx)                                         │
+│     ├── on conflict: gitExec(["diff", "--name-only", "--diff-filter=U"])│
+│     │   └── notify conflicts, stash preserved, return {ok: false}  │
+│     └── on checkout fail: gitExec(["stash", "apply"]) rollback      │
+│                                                                      │
+│  8. verifyOrFailMerge(pi, ctx, mainBranch, targetBranch, preHead)   │
+│     ├── verifyMergeIntegrity(pi, mainRepoPath, ...) ← worktree.ts  │
+│     │   ├── gitExec(["status", "--porcelain"]) — tracked dirty check│
+│     │   └── gitExec(["merge-base", "--is-ancestor", ...])           │
+│     └── on failure: gitExec(["reset", "--hard", preMergeHead])      │
+│                                                                      │
+│  9. if didStash: gitExec(["stash", "apply"]) → gitExec(["stash", "drop"])│
+│                                                                      │
+│ 10. finalizeMerge(pi, ctx, target, filesToCopy)                     │
+│     ├── copyFilesWithOverwrite(files, wt.path, mainRepoPath)        │
+│     ├── askToDeleteWorktree(ctx, target.branch)                     │
+│     │   └── if yes: gitExec(["worktree", "remove", "-f", wt.path])  │
+│     │       └── gitExec(["worktree", "prune"])                      │
+│     ├── setCurrentBranch(target.mainBranch)  ← state.ts            │
+│     ├── switchCwd(pi, ctx, mainRepoPath)     ← worktree.ts         │
+│     ├── updateFooterStatus(ctx)              ← state.ts            │
+│     └── ctx.ui.notify("Merged ... into ... and removed worktree")   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
-
 ---
 
 ## Closure State Model
@@ -216,14 +250,19 @@ All git commands are executed through the `gitExec` wrapper in `git.ts`, which c
 | Check branch exists   | `git rev-parse --verify <branch>`                  | `wt-create.ts`                                     |
 | Check dirty state     | `git status --porcelain`                           | `worktree.ts`                                      |
 | Detect default branch | `git symbolic-ref refs/remotes/origin/HEAD`        | `worktree.ts`                                      |
-| Stage changes         | `git add -A`                                       | `worktree.ts`                                      |
+| Stage tracked only    | `git add -u`                                       | `worktree.ts` (`autoCommitWithAIMessage`), `wt-merge.ts` |
 | Get staged diff       | `git diff --cached`                                | `worktree.ts`                                      |
 | Commit                | `git commit -m <message>`                          | `worktree.ts`                                      |
 | Checkout branch       | `git checkout <branch>`                            | `wt-merge.ts`                                      |
 | Merge branch          | `git merge <branch>`                               | `wt-merge.ts`                                      |
-| Stash / pop           | `git stash` / `git stash pop`                      | `wt-merge.ts`                                      |
+| Stash / apply / drop  | `git stash` / `git stash apply` / `git stash drop` | `wt-merge.ts`                                      |
 | Delete branch         | `git branch -d <branch>`                           | `wt-cleanup.ts`                                    |
 | List untracked files  | `git ls-files -z --others --exclude-standard`      | `git.ts`, used by `wt-create.ts` and `wt-merge.ts` |
+| Check tracked changes | `git status --porcelain` (filter `?? `)            | `worktree.ts` (`hasTrackedChanges`)                |
+| Verify ancestor        | `git merge-base --is-ancestor <branch> <main>`      | `worktree.ts` (`verifyMergeIntegrity`)             |
+| Get current HEAD       | `git rev-parse HEAD`                                | `wt-merge.ts` (`getPreMergeHead`)                  |
+| Rollback merge         | `git reset --hard <sha>`                            | `wt-merge.ts` (`verifyOrFailMerge`)                |
+| List conflicted files  | `git diff --name-only --diff-filter=U`              | `wt-merge.ts` (`checkoutAndMerge`)                 |
 
 ---
 

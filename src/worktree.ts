@@ -93,6 +93,14 @@ export async function hasUncommittedChanges(
   return result.stdout.trim().length > 0;
 }
 
+/** Check for uncommitted tracked changes (staged or unstaged modifications to tracked files), excluding untracked files. */
+export async function hasTrackedChanges(pi: ExtensionAPI, worktreePath: string): Promise<boolean> {
+  const result = await gitExec(pi, ["status", "--porcelain"], worktreePath);
+  if (result.code !== 0) return false;
+  const lines = result.stdout.split("\n");
+  return lines.some((line) => line.length > 0 && !line.startsWith("?? "));
+}
+
 // ---------------------------------------------------------------------------
 // detectDefaultBranch — detect the default branch from git
 // ---------------------------------------------------------------------------
@@ -143,22 +151,25 @@ export async function ensureMainRepo(
 // ---------------------------------------------------------------------------
 
 const FALLBACK_COMMIT_MESSAGE = "chore: auto-commit worktree changes";
-const EMPTY_DIFF_FALLBACK = "chore: save work";
 
+/**
+ * Stage tracked-file changes, generate a commit message via AI, and commit.
+ * Returns the commit message on success, or `null` when there is nothing to commit.
+ */
 export async function autoCommitWithAIMessage(
   pi: ExtensionAPI,
   worktreePath: string,
-): Promise<string> {
-  // Stage all changes
-  await gitExec(pi, ["add", "-A"], worktreePath);
+): Promise<string | null> {
+  // Stage modifications/deletions to tracked files only
+  await gitExec(pi, ["add", "-u"], worktreePath);
 
   // Get staged diff
   const diffResult = await gitExec(pi, ["diff", "--cached"], worktreePath);
   const diff = diffResult.stdout.trim();
 
   if (!diff) {
-    // Nothing staged after add -A, nothing to commit
-    return EMPTY_DIFF_FALLBACK;
+    // Nothing staged after add -u — nothing to commit
+    return null;
   }
 
   // Generate commit message via pi subprocess.
@@ -193,6 +204,48 @@ export async function autoCommitWithAIMessage(
 }
 
 // ---------------------------------------------------------------------------
+// verifyMergeIntegrity — verify a merge was successful
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify a merge was successful by checking:
+ * 1. Main worktree has no unexpected tracked dirty files
+ * 2. The worktree branch is an ancestor of main (all commits are reachable)
+ * Returns { ok: true, errors: [] } on success, or { ok: false, errors: [...] } on failure.
+ */
+export async function verifyMergeIntegrity(
+  pi: ExtensionAPI,
+  mainRepoPath: string,
+  mainBranch: string,
+  worktreeBranch: string,
+): Promise<{ ok: boolean; errors: string[] }> {
+  const errors: string[] = [];
+
+  // 1. Check tracked files are clean on main
+  const statusResult = await gitExec(pi, ["status", "--porcelain"], mainRepoPath);
+  if (statusResult.code === 0) {
+    const trackedDirty = statusResult.stdout
+      .split("\n")
+      .some((line) => line.trim() !== "" && !line.startsWith("?? "));
+    if (trackedDirty) {
+      errors.push("Main worktree has unexpected tracked dirty files after merge");
+    }
+  }
+
+  // 2. Verify worktree branch is an ancestor of main (all commits reachable)
+  const ancestorResult = await gitExec(
+    pi,
+    ["merge-base", "--is-ancestor", worktreeBranch, mainBranch],
+    mainRepoPath,
+  );
+  if (ancestorResult.code !== 0) {
+    errors.push("Worktree branch '" + worktreeBranch + "' is not fully merged into " + mainBranch);
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+// ---------------------------------------------------------------------------
 // copyUntrackedFiles — copy untracked files from source to destination
 // ---------------------------------------------------------------------------
 
@@ -203,9 +256,13 @@ export function copyUntrackedFiles(
 ): void {
   if (untrackedFiles.length === 0) return;
 
+  const resolvedSrcDir = resolve(sourceDir);
+
   for (const relPath of untrackedFiles) {
     try {
       const srcPath = join(sourceDir, relPath);
+      const resolvedSrc = resolve(srcPath);
+      if (!resolvedSrc.startsWith(resolvedSrcDir + "/") && resolvedSrc !== resolvedSrcDir) continue;
       const destPath = join(destDir, relPath);
 
       // Prevent path traversal
