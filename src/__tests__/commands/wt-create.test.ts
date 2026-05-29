@@ -9,6 +9,7 @@ vi.mock("node:fs", () => ({
 // ── Mock git module ─────────────────────────────────────────────
 vi.mock("../../git.js", () => ({
   gitExec: vi.fn(),
+  getUntrackedFiles: vi.fn(),
 }));
 
 // ── Mock worktree module ─────────────────────────────────────────
@@ -16,6 +17,7 @@ vi.mock("../../worktree.js", () => ({
   resolveBaseDir: vi.fn(() => "/repo/.git/worktrees/"),
   ensureMainRepo: vi.fn(),
   switchCwd: vi.fn(),
+  copyUntrackedFiles: vi.fn(),
 }));
 
 // ── Mock validation module ──────────────────────────────────────
@@ -34,11 +36,12 @@ vi.mock("../../state.js", () => ({
 // ── Imports (after mocks are registered) ─────────────────────────────
 import { statSync } from "node:fs";
 import { handleWtCreate } from "../../commands/wt-create.js";
-import { gitExec } from "../../git.js";
-import { resolveBaseDir, ensureMainRepo, switchCwd } from "../../worktree.js";
+import { gitExec, getUntrackedFiles } from "../../git.js";
+import { resolveBaseDir, ensureMainRepo, switchCwd, copyUntrackedFiles } from "../../worktree.js";
 import { validateBranchName } from "../../validation.js";
 import { getMainRepoPath, setCurrentBranch, updateFooterStatus } from "../../state.js";
 import { createMockAPI, createMockContext, successResult, errorResult } from "../helpers/mocks.js";
+import { FEATURE_PATH } from "../helpers/fixtures.js";
 
 // ============================================================================
 // Setup
@@ -56,6 +59,8 @@ beforeEach(() => {
   vi.mocked(getMainRepoPath).mockReturnValue("/repo");
   vi.mocked(resolveBaseDir).mockReturnValue("/repo/.git/worktrees/");
   vi.mocked(ensureMainRepo).mockResolvedValue(true);
+  vi.mocked(getUntrackedFiles).mockResolvedValue([]);
+  vi.mocked(copyUntrackedFiles).mockReturnValue();
 });
 
 // ============================================================================
@@ -200,5 +205,84 @@ describe("handleWtCreate", () => {
     // Should NOT have called switchCwd or setCurrentBranch
     expect(switchCwd).not.toHaveBeenCalled();
     expect(setCurrentBranch).not.toHaveBeenCalled();
+  });
+
+  it("copies untracked files on new branch creation", async () => {
+    vi.mocked(getUntrackedFiles).mockResolvedValue(["untracked.txt"]);
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(errorResult())
+      .mockResolvedValueOnce(successResult());
+
+    const ctx = createMockContext();
+    await handleWtCreate("feature", ctx, api);
+
+    expect(getUntrackedFiles).toHaveBeenCalledWith(api, ctx.cwd);
+    expect(copyUntrackedFiles).toHaveBeenCalledWith(["untracked.txt"], ctx.cwd, FEATURE_PATH);
+  });
+
+  it("uses ctx.cwd as source path for untracked files", async () => {
+    vi.mocked(getUntrackedFiles).mockResolvedValue(["file.txt"]);
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(errorResult())
+      .mockResolvedValueOnce(successResult());
+
+    const customCtx = createMockContext({ cwd: "/custom/source/path" });
+    await handleWtCreate("feature", customCtx, api);
+
+    expect(getUntrackedFiles).toHaveBeenCalledWith(api, "/custom/source/path");
+    expect(copyUntrackedFiles).toHaveBeenCalledWith(
+      ["file.txt"],
+      "/custom/source/path",
+      FEATURE_PATH,
+    );
+  });
+
+  it("handles empty untracked files list gracefully", async () => {
+    vi.mocked(getUntrackedFiles).mockResolvedValue([]);
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(errorResult())
+      .mockResolvedValueOnce(successResult());
+
+    const ctx = createMockContext();
+    await handleWtCreate("feature", ctx, api);
+
+    expect(copyUntrackedFiles).toHaveBeenCalledWith([], ctx.cwd, FEATURE_PATH);
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "Created worktree for 'feature' at /repo/.git/worktrees/feature",
+      "info",
+    );
+  });
+
+  it("does not copy files when worktree creation fails", async () => {
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(errorResult())
+      .mockResolvedValueOnce(errorResult("fatal: already exists"));
+
+    const ctx = createMockContext();
+    await handleWtCreate("feature", ctx, api);
+
+    expect(getUntrackedFiles).not.toHaveBeenCalled();
+    expect(copyUntrackedFiles).not.toHaveBeenCalled();
+  });
+
+  it("copies untracked files for existing branch path", async () => {
+    vi.mocked(getUntrackedFiles).mockResolvedValue(["notes.md"]);
+
+    vi.mocked(gitExec)
+      .mockResolvedValueOnce(successResult())
+      .mockResolvedValueOnce(successResult());
+
+    const ctx = createMockContext();
+    await handleWtCreate("existing-branch", ctx, api);
+
+    expect(getUntrackedFiles).toHaveBeenCalledWith(api, ctx.cwd);
+    expect(copyUntrackedFiles).toHaveBeenCalledWith(
+      ["notes.md"],
+      ctx.cwd,
+      "/repo/.git/worktrees/existing-branch",
+    );
   });
 });

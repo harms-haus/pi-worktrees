@@ -17,6 +17,9 @@ Create a feature branch, work on it, then merge it back and clean up.
 
 # Footer now shows: 🌳 feature/login
 # You're now in .git/worktrees/feature/login/
+# Any untracked files in your current directory (e.g. .env files,
+# configuration files not yet committed) are automatically copied
+# to the new worktree.
 
 # 2. Work on the feature — edit files, commit, etc.
 # The agent operates in the worktree directory
@@ -41,7 +44,9 @@ Work on multiple features simultaneously by creating separate worktrees.
 ```
 # Create two feature worktrees
 /wt-create feature/login
+# Untracked files are carried over to feature/login's worktree
 /wt-create feature/dashboard
+# Untracked files from the current directory are carried over again
 
 # Both worktrees exist on disk:
 #   .git/worktrees/feature/login/

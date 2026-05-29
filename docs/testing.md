@@ -39,11 +39,12 @@ npx vitest run --coverage
 | File | What it tests |
 | --- | --- |
 | `src/__tests__/index.test.ts` | Extension entry point — command registration, event handler wiring |
+| `src/__tests__/git.test.ts` | `getUntrackedFiles` — error handling, empty output, NUL-separated parsing, empty-string filtering, paths with spaces, correct git arguments |
 | `src/__tests__/helpers.test.ts` | Git utilities — `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `findWorktreeByBranch`, `getMainWorktree`, `validateBranchName`, `expandTilde` |
-| `src/__tests__/worktree.test.ts` | Worktree operations — `resolveBaseDir`, `switchCwd`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `ensureMainRepo`, `autoCommitWithAIMessage` |
+| `src/__tests__/worktree.test.ts` | Worktree operations — `resolveBaseDir`, `switchCwd`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `ensureMainRepo`, `autoCommitWithAIMessage`, `copyUntrackedFiles` |
 | `src/__tests__/state.test.ts` | State module — getters/setters, `resetState`, `updateFooterStatus`, `restoreWorktreeFromBranch` |
 | `src/__tests__/completions.test.ts` | Tab-completion — branch name filtering, prefix matching, detached HEAD handling |
-| `src/__tests__/commands/wt-create.test.ts` | `/wt-create` — branch validation, new vs existing branch, directory conflicts, error flows |
+| `src/__tests__/commands/wt-create.test.ts` | `/wt-create` — branch validation, new vs existing branch, directory conflicts, untracked file copying, error flows |
 | `src/__tests__/commands/wt-switch.test.ts` | `/wt-switch` — default branch target, missing worktree, branch lookup |
 | `src/__tests__/commands/wt-merge.test.ts` | `/wt-merge` — auto-commit, stash/restore, merge conflicts, confirmation flow |
 | `src/__tests__/commands/wt-cleanup.test.ts` | `/wt-cleanup` — uncommitted changes guard, locked worktree fallback, branch deletion |
@@ -152,6 +153,7 @@ vi.mock("../git.js", () => ({
   getWorktreeList: vi.fn(),
   findWorktreeByBranch: vi.fn(),
   getMainWorktree: vi.fn(),
+  getUntrackedFiles: vi.fn(),
 }));
 
 vi.mock("../worktree.js", () => ({
@@ -161,6 +163,7 @@ vi.mock("../worktree.js", () => ({
   ensureMainRepo: vi.fn(),
   hasUncommittedChanges: vi.fn(),
   autoCommitWithAIMessage: vi.fn(),
+  copyUntrackedFiles: vi.fn(),
 }));
 
 vi.mock("../validation.js", () => ({

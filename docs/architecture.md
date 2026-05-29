@@ -28,8 +28,8 @@ The extension has no HTTP server, no database, and no background processes. It i
 | `src/index.ts`            | Entry point; registers 4 commands + 3 event handlers                                                     | `default` (extension function)                                                                                                                                 | `state.ts`, `commands/*`, `completions.ts`, `worktree.ts`   |
 | `src/types.ts`            | Type definitions                                                                                         | `WorktreeInfo`, `WORKTREE_CHANGE_TYPE`, `WorktreeChangeData`                                                                                                   | —                                                           |
 | `src/state.ts`            | Module-level state variables, accessors, restoration from session branch, footer status updates          | `getMainRepoPath`, `setMainRepoPath`, `getCurrentWorktreePath`, `setCurrentWorktreePath`, `getCurrentBranch`, `setCurrentBranch`, `getDefaultBranch`, `setDefaultBranch`, `resetState`, `updateFooterStatus`, `restoreWorktreeFromBranch` | `types.ts` |
-| `src/git.ts`              | Git execution wrapper, worktree porcelain parsing, worktree queries                                      | `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `findWorktreeByBranch`, `getMainWorktree`                                                              | `state.ts`, `types.ts`                                      |
-| `src/worktree.ts`         | Worktree operations: base directory resolution, CWD switching, repo detection, dirty check, auto-commit  | `resolveBaseDir`, `switchCwd`, `ensureMainRepo`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `autoCommitWithAIMessage`                   | `git.ts`, `state.ts`, `types.ts`                            |
+| `src/git.ts`              | Git execution wrapper, worktree porcelain parsing, worktree queries                                      | `gitExec`, `parseWorktreePorcelain`, `getWorktreeList`, `findWorktreeByBranch`, `getMainWorktree`, `getUntrackedFiles`                                        | `state.ts`, `types.ts`                                      |
+| `src/worktree.ts`         | Worktree operations: base directory resolution, CWD switching, repo detection, dirty check, auto-commit, untracked file copying | `resolveBaseDir`, `switchCwd`, `ensureMainRepo`, `detectMainRepo`, `hasUncommittedChanges`, `detectDefaultBranch`, `autoCommitWithAIMessage`, `copyUntrackedFiles` | `git.ts`, `state.ts`, `types.ts`                            |
 | `src/validation.ts`       | Input validation for branch names and tilde expansion                                                    | `validateBranchName`, `expandTilde`                                                                                                                            | —                                                           |
 | `src/completions.ts`      | Tab-completion for branch names across all worktree commands                                             | `getBranchCompletions`                                                                                                                                         | `git.ts`, `state.ts`                                        |
 | `src/commands/wt-create.ts` | `/wt-create` handler                                                                                   | `handleWtCreate`                                                                                                                                               | `git.ts`, `worktree.ts`, `validation.ts`, `state.ts`        |
@@ -82,13 +82,15 @@ User
 │  2. detectMainRepo(pi, ctx.cwd)             ← worktree.ts           │
 │  3. resolveBaseDir(mainRepoPath)            ← worktree.ts           │
 │  4. gitExec(["worktree", "add", ...])       ← git.ts                │
-│  5. setCurrentBranch(branchName)            ← state.ts              │
-│  6. switchCwd(pi, ctx, worktreePath)        ← worktree.ts           │
+│  5. getUntrackedFiles(pi, ctx.cwd)          ← git.ts                │
+│     └── copyUntrackedFiles(files, ctx.cwd, worktreePath) ← worktree.ts│
+│  6. setCurrentBranch(branchName)            ← state.ts              │
+│  7. switchCwd(pi, ctx, worktreePath)        ← worktree.ts           │
 │     ├── pi.sendUserMessage("/cwd " + path)                          │
 │     ├── setCurrentWorktreePath(path)       ← state.ts              │
 │     └── pi.appendEntry(WORKTREE_CHANGE_TYPE, data)                  │
-│  7. updateFooterStatus(ctx)                 ← state.ts              │
-│  8. ctx.ui.notify("Created worktree...")    ← TUI                   │
+│  8. updateFooterStatus(ctx)                 ← state.ts              │
+│  9. ctx.ui.notify("Created worktree...")    ← TUI                   │
 └──────────────────────────────────────────────────────────────────────┘
 
 User
@@ -214,6 +216,7 @@ All git commands are executed through the `gitExec` wrapper in `git.ts`, which c
 | Merge branch                  | `git merge <branch>`                                              | `wt-merge.ts`     |
 | Stash / pop                   | `git stash` / `git stash pop`                                     | `wt-merge.ts`     |
 | Delete branch                 | `git branch -d <branch>`                                          | `wt-cleanup.ts`   |
+| List untracked files           | `git ls-files -z --others --exclude-standard`                      | `git.ts`          |
 
 ---
 
@@ -232,9 +235,9 @@ Only `@earendil-works/pi-coding-agent` is a **peer dependency** listed in `packa
 | Module            | Purpose                                                                                            |
 | ----------------- | -------------------------------------------------------------------------------------------------- |
 | `node:child_process` | `spawnSync` — synchronous subprocess for AI commit message generation (`pi --print`)             |
-| `node:fs`         | `readFileSync`, `statSync`, `existsSync` — reading settings, checking directory existence         |
+| `node:fs`         | `readFileSync`, `statSync`, `existsSync`, `copyFileSync`, `lstatSync`, `mkdirSync` — reading settings, checking directory existence, copying untracked files |
 | `node:os`         | `homedir` — resolving `~` in paths and locating `~/.pi/agent/settings.json`                       |
-| `node:path`       | `isAbsolute`, `join`, `resolve` — path construction for worktree locations and settings resolution |
+| `node:path`       | `isAbsolute`, `join`, `resolve`, `dirname` — path construction for worktree locations, settings resolution, and file copy dest paths |
 
 ### Key convention: synchronous settings reads
 

@@ -21,8 +21,12 @@ const {
   setMainRepoPath: vi.fn(),
 }));
 
-const { readFileSync } = vi.hoisted(() => ({
+const { readFileSync, lstatSync, existsSync, mkdirSync, copyFileSync } = vi.hoisted(() => ({
   readFileSync: vi.fn(),
+  lstatSync: vi.fn(),
+  existsSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  copyFileSync: vi.fn(),
 }));
 
 const { spawnSync } = vi.hoisted(() => ({
@@ -46,6 +50,10 @@ vi.mock("../state.js", () => ({
 
 vi.mock("node:fs", () => ({
   readFileSync,
+  lstatSync,
+  existsSync,
+  mkdirSync,
+  copyFileSync,
 }));
 
 vi.mock("node:child_process", () => ({
@@ -61,6 +69,7 @@ import {
   detectDefaultBranch,
   ensureMainRepo,
   autoCommitWithAIMessage,
+  copyUntrackedFiles,
 } from "../worktree.js";
 import { WORKTREE_CHANGE_TYPE } from "../types.js";
 import { createMockAPI, createMockContext } from "./helpers/mocks.js";
@@ -72,6 +81,8 @@ import { MAIN_REPO, MAIN_BRANCH, FEATURE_BRANCH, FEATURE_PATH } from "./helpers/
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(lstatSync).mockReturnValue({ isDirectory: () => false, isSymbolicLink: () => false } as any);
+  vi.mocked(existsSync).mockReturnValue(false);
 });
 
 afterEach(() => {
@@ -544,5 +555,86 @@ describe("autoCommitWithAIMessage", () => {
     const result = await autoCommitWithAIMessage(api, "/repo/wt");
 
     expect(result).toBe("chore: auto-commit worktree changes");
+  });
+});
+
+// ============================================================================
+// copyUntrackedFiles
+// ============================================================================
+describe("copyUntrackedFiles", () => {
+  it("is no-op when list is empty", () => {
+    copyUntrackedFiles([], "/src", "/dest");
+
+    expect(copyFileSync).not.toHaveBeenCalled();
+    expect(mkdirSync).not.toHaveBeenCalled();
+  });
+
+  it("copies a single file", () => {
+    copyUntrackedFiles(["file.txt"], "/src", "/dest");
+
+    expect(copyFileSync).toHaveBeenCalledWith("/src/file.txt", "/dest/file.txt");
+  });
+
+  it("creates parent directories for nested paths", () => {
+    copyUntrackedFiles(["a/b/c.txt"], "/src", "/dest");
+
+    expect(mkdirSync).toHaveBeenCalledWith("/dest/a/b", { recursive: true });
+    expect(copyFileSync).toHaveBeenCalledWith("/src/a/b/c.txt", "/dest/a/b/c.txt");
+  });
+
+  it("skips directories (submodule filter)", () => {
+    vi.mocked(lstatSync).mockReturnValue({ isDirectory: () => true, isSymbolicLink: () => false } as any);
+
+    copyUntrackedFiles(["submodule-dir"], "/src", "/dest");
+
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("skips files that already exist in destination", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+
+    copyUntrackedFiles(["file.txt"], "/src", "/dest");
+
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("continues when a single file fails to copy", () => {
+    vi.mocked(copyFileSync).mockImplementationOnce(() => {
+      throw new Error("copy failed");
+    });
+
+    copyUntrackedFiles(["fail.txt", "ok.txt"], "/src", "/dest");
+
+    expect(copyFileSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues when lstatSync throws (file disappeared)", () => {
+    vi.mocked(lstatSync).mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
+
+    copyUntrackedFiles(["gone.txt"], "/src", "/dest");
+
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("skips symbolic links", () => {
+    vi.mocked(lstatSync).mockReturnValue({ isDirectory: () => false, isSymbolicLink: () => true } as any);
+    copyUntrackedFiles(["symlink-file"], "/src", "/dest");
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("skips files with path traversal in relative path", () => {
+    copyUntrackedFiles(["../../../etc/passwd"], "/src", "/dest");
+    expect(copyFileSync).not.toHaveBeenCalled();
+  });
+
+  it("copies multiple files", () => {
+    copyUntrackedFiles(["a.txt", "b.txt", "dir/c.txt"], "/src", "/dest");
+
+    expect(copyFileSync).toHaveBeenCalledTimes(3);
+    expect(copyFileSync).toHaveBeenCalledWith("/src/a.txt", "/dest/a.txt");
+    expect(copyFileSync).toHaveBeenCalledWith("/src/b.txt", "/dest/b.txt");
+    expect(copyFileSync).toHaveBeenCalledWith("/src/dir/c.txt", "/dest/dir/c.txt");
   });
 });

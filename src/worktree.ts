@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { gitExec, getWorktreeList, getMainWorktree } from "./git.js";
 import {
@@ -189,4 +189,43 @@ export async function autoCommitWithAIMessage(
   }
 
   return commitMessage;
+}
+
+// ---------------------------------------------------------------------------
+// copyUntrackedFiles — copy untracked files from source to destination
+// ---------------------------------------------------------------------------
+
+export function copyUntrackedFiles(
+  untrackedFiles: string[],
+  sourceDir: string,
+  destDir: string,
+): void {
+  if (untrackedFiles.length === 0) return;
+
+  for (const relPath of untrackedFiles) {
+    try {
+      const srcPath = join(sourceDir, relPath);
+      const destPath = join(destDir, relPath);
+
+      // Prevent path traversal
+      const resolvedDest = resolve(destPath);
+      if (!resolvedDest.startsWith(resolve(destDir) + "/") && resolvedDest !== resolve(destDir)) continue;
+
+      // Skip directories (submodule filter) and symlinks
+      const stat = lstatSync(srcPath);
+      if (stat.isDirectory()) continue;
+      if (stat.isSymbolicLink()) continue;
+
+      // Skip existing files
+      if (existsSync(destPath)) continue;
+
+      // Create parent directory
+      mkdirSync(dirname(destPath), { recursive: true });
+
+      // Copy file
+      copyFileSync(srcPath, destPath);
+    } catch {
+      // Individual copy failure — silently skip
+    }
+  }
 }

@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { gitExec } from "../git.js";
-import { resolveBaseDir, switchCwd, ensureMainRepo } from "../worktree.js";
+import { gitExec, getUntrackedFiles } from "../git.js";
+import { resolveBaseDir, switchCwd, ensureMainRepo, copyUntrackedFiles } from "../worktree.js";
 import { validateBranchName } from "../validation.js";
 import { getMainRepoPath, setCurrentBranch, updateFooterStatus } from "../state.js";
 
@@ -61,7 +61,11 @@ export async function handleWtCreate(
     return;
   }
 
-  // 6. Update state and switch
+  // 6. Copy untracked files
+  const untrackedFiles = await getUntrackedFiles(pi, ctx.cwd);
+  copyUntrackedFiles(untrackedFiles, ctx.cwd, worktreePath);
+
+  // 7. Update state and switch
   setCurrentBranch(branchName);
   switchCwd(pi, ctx, worktreePath);
   updateFooterStatus(ctx);

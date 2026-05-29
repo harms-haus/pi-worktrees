@@ -91,3 +91,14 @@ export function findWorktreeByBranch(
 export function getMainWorktree(worktrees: WorktreeInfo[]): WorktreeInfo | undefined {
   return worktrees[0];
 }
+
+// ---------------------------------------------------------------------------
+// getUntrackedFiles — list untracked files (respecting .gitignore)
+// ---------------------------------------------------------------------------
+
+export async function getUntrackedFiles(pi: ExtensionAPI, cwd: string): Promise<string[]> {
+  const result = await gitExec(pi, ["ls-files", "-z", "--others", "--exclude-standard"], cwd);
+  if (result.code !== 0) return [];
+  if (!result.stdout) return [];
+  return result.stdout.split("\0").filter(Boolean);
+}

@@ -38,8 +38,22 @@ Create a new git worktree and switch to it.
 5. **Check if branch exists** via `git rev-parse --verify`:
    - **Branch exists**: `git worktree add <path> <branch>` — check out existing branch in a new worktree.
    - **Branch doesn't exist**: `git worktree add -b <branch> <path>` — create new branch and worktree.
-6. **Update state**: set `currentBranch`, call `switchCwd()`, update footer status.
-7. **Notify success** with the branch name and worktree path.
+6. **Copy untracked files** — `getUntrackedFiles(pi, ctx.cwd)` lists untracked files via `git ls-files -z --others --exclude-standard`, then `copyUntrackedFiles(files, ctx.cwd, worktreePath)` copies them. Directories, symlinks, and files that already exist in the destination are skipped. Individual copy failures are silently ignored. This step is best-effort and does not affect the overall worktree creation flow.
+7. **Update state**: set `currentBranch`, call `switchCwd()`, update footer status.
+8. **Notify success** with the branch name and worktree path.
+
+### Untracked Files
+
+When a worktree is created, untracked files from the current working directory are automatically copied to the new worktree. This is a best-effort convenience feature — copy failures never cause worktree creation to fail.
+
+- **Source**: `ctx.cwd` — wherever the user is when they run the command.
+- **Discovery**: `git ls-files -z --others --exclude-standard` — respects `.gitignore`; files matching ignore rules are **not** copied.
+- **Skipped**:
+  - Directories (including submodule directories)
+  - Symbolic links
+  - Files that already exist in the new worktree
+  - Files whose resolved path escapes the destination directory (path traversal protection)
+- **Error handling**: individual copy failures are silently ignored.
 
 ### Error Cases
 
